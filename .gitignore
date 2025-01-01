@@ -6,6 +6,17 @@ __pycache__/
 # C extensions
 *.so
 
+# Ignore Jupyter notebooks
+*.ipynb
+
+# Ignore video files
+*.mp4
+*.mov
+
+# Ignore the tests folder and its contents
+tests/
+
+
 # Distribution / packaging
 .Python
 build/
