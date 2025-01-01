@@ -1,0 +1,17 @@
+{
+    "pose_estimator": {
+        "tracked_csv_dir": "./tracked_csv",
+        "tracked_video_dir": "./tracked_videos"
+    },
+    "preprocessing": {
+        "median_filter_window": 5,
+        "normalization": true
+    },
+    "event_detection": {
+        "algorithm": "zeni",
+        "frame_rate": 30
+    },
+    "gait_parameters": {
+        "save_path": "./gait_parameters"
+    }
+}
