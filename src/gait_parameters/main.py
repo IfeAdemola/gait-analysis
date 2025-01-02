@@ -79,6 +79,10 @@ def main():
     pose_data = pipeline.load_input()
     print(f"Loaded input data from {args.input_path}")
 
+    if pose_data is None:
+        print("Failed to load input data.")
+        return
+
     # Preprocess the pose data
     pose_data = pipeline.preprocess()
     print("Pose data preprocessed.")
