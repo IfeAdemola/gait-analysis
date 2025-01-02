@@ -11,8 +11,12 @@ def parse_args():
         Namespace: Command-line arguments.
     """
     parser = argparse.ArgumentParser(description="Run Gait Analysis Pipeline")
-    parser.add_argument('input_path', type=str, help="Path to the input file (CSV or video)")
-    parser.add_argument('--input_dir', type=str, help="Directory containing input files")
+
+    # Mutually exclusive group for input_path and input_dir
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('input_path', type=str, nargs='?', help="Path to the input file (CSV or video)")
+    group.add_argument('--input_dir', type=str, help="Directory containing input files")
+
     parser.add_argument('--config', type=str, default='config.json', help="Path to the configuration JSON file")
     parser.add_argument('--output_dir', type=str, default='./gait_parameters', help="Directory to save the output CSV file(s)")
     return parser.parse_args()
