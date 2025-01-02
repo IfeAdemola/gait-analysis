@@ -80,7 +80,6 @@ def main():
     print(f"Loaded input data from {args.input_path}")
 
     if pose_data is None:
-        print("Failed to load input data.")
         return
 
     # Preprocess the pose data
