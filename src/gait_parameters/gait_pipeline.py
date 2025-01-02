@@ -21,7 +21,8 @@ class GaitPipeline:
         elif self.input_path.endswith((".mp4", ".mov")):
             pose_estimator = PoseEstimator()
             self.pose_data = pose_estimator.process_video(video_path=self.input_path)
-            self.pose_data = self.pose_data.apply(pd.to_numeric, errors='coerce')
+            if self.pose_data is not None:
+                self.pose_data = self.pose_data.apply(pd.to_numeric, errors='coerce')
         else:
             raise ValueError("Unsupported input format. Use .mp4 or .mov for videos and .csv for spreadsheets")
         return self.pose_data
