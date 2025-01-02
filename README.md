@@ -1,4 +1,4 @@
-# Gait Analysis
+# Kinematic Gait Analysis
 
 This project analyzes patient gait data from videos, performs statistical inferences, and uses machine learning for prediction and classification.
 
@@ -13,7 +13,7 @@ This project analyzes patient gait data from videos, performs statistical infere
 ## Quickstart
 1. Clone the repository:
    ```bash
-   git clone https://github.com/username/gait-analysis.git
+   git clone https://github.com/IfeAdemola/gait-analysis.git
 
 2. Install dependencies:
     ```bash
