@@ -1,0 +1,8 @@
+opencv-python
+matplotlib==3.9.3
+mediapipe
+numpy
+pandas
+scipy
+tqdm
+scikit-video
