@@ -14,7 +14,7 @@ This module computes spatiotemporal gait parameters from video recordings. The p
 ### **1. Pose Estimation**
 - **Script**: `pose_estimation.py`
 - **Input**: A video file in `.mp4` or `.mov` format.
-- **Process**: Uses [MediaPipe](https://google.github.io/mediapipe/) for pose tracking to extract the `(x, y, z)` positions of body landmarks.
+- **Process**: Uses [MediaPipe](https://github.com/google-ai-edge/mediapipe) for pose tracking to extract the `(x, y, z)` positions of body landmarks.
 - **Output**: A `.csv` file containing pose data for each frame of the video.
 
 ---
@@ -46,7 +46,7 @@ This module computes spatiotemporal gait parameters from video recordings. The p
 
 ---
 
-### **4. Gait Parameter Calculation**
+### **4. Gait Parameters Calculation**
 - **Script**: `gait_params.py`
 - **Input**: The events DataFrame from the previous step.
 - **Process**: Calculates gait parameters based on the detected events.
@@ -70,17 +70,17 @@ You can either:
    ```bash
    python pose_estimation.py --input video.mp4 --output pose_data.csv
    python preprocessing.py --input pose_data.csv --output preprocessed_data.csv
-   python event_detection.py --input preprocessed_data.csv --frame_rate 30 --zeni --output events.csv
+   python event_detection.py --input preprocessed_data.csv --frame_rate 30 --algorithm zeni --output events.csv
    python gait_params.py --input events.csv --output gait_parameters.csv
 
 2. **Run the entire pipeline**:
    - To process videos in a directory, run:
    ```bash
-   python main.py --input_dir videos --config config.json --output_dir gait-kinematic-parameters
+   python main.py --input_dir ./videos --config config.json --output_dir ./gait-kinematic-parameters
    ```
 
    - Alternatively, you can process a single video file:
    ```bash
-   python main.py --input_path video.mp4 --config config.json --output_dir gait-kinematic-parameters
+   python main.py --input_path ./videos/video.mp4 --config config.json --output_dir ./gait-kinematic-parameters
    ```
 
