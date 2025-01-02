@@ -24,3 +24,4 @@ This project analyzes patient gait data from videos, performs statistical infere
     <!-- Add arguments to command  -->
     ```bash
     python src/gait_parameters/main.py [--input_dir <input_dir>] [--config <config>] [--output_dir <output_dir>]
+    ```
