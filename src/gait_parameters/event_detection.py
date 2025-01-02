@@ -72,12 +72,12 @@ class EventDetector:
         to_right = to_right_idx / self.frame_rate
 
         # Store detected events
-        events["HS_left"] = hs_left
-        events["TO_left"] = to_left
-        events["HS_right"] = hs_right
-        events["TO_right"] = to_right
+        events["HS_left"] = hs_left.tolist()
+        events["TO_left"] = to_left.tolist()
+        events["HS_right"] = hs_right.tolist()
+        events["TO_right"] = to_right.tolist()
 
-        return events
+        return pd.DataFrame(events)
 
     def _detect_events_dewitt(self, pose_data):
         """Detects toe-off (TO) events using the DeWitt et al. method."""
@@ -119,7 +119,7 @@ class EventDetector:
         events["HS_right"] = hs_zeni_right
         events["TO_right"] = toe_off_times_right
 
-        return events
+        return pd.DataFrame(events)
 
     def _process_toe_off_peaks(self, toe_acc_peaks, hs_times, toe_jerk):
         """Process peaks in toe acceleration to find toe-off times."""
@@ -183,4 +183,4 @@ class EventDetector:
             events[f"HS_{side}"] = hs_times
             events[f"TO_{side}"] = to_times
 
-        return events
+        return pd.DataFrame(events)
