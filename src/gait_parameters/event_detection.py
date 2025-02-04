@@ -1,10 +1,13 @@
+# gait_pipeline/event_detection.py
+
 import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks, butter, filtfilt
+from sklearn.decomposition import PCA
 from plotting import plot_raw_pose, plot_extremas, plot_extrema_frames
 
 def butter_lowpass_filter(data, cutoff=3, fs=30, order=4):
-    """Filter signal"""
+    """Filter signal using a lowpass Butterworth filter."""
     nyquist = 0.5 * fs
     normal_cutoff = cutoff / nyquist
     b, a = butter(order, normal_cutoff, btype='low', analog=False)
@@ -15,227 +18,180 @@ def detect_extremas(signal):
     threshold = np.mean(signal)
     peaks, _ = find_peaks(signal, height=threshold)
     valleys, _ = find_peaks(-signal, height=-threshold)
-    return peaks, valleys 
+    return peaks, valleys
+
+def determine_gait_direction_sliding_window(pose_data, marker="sacrum", window_size=100, step_size=50):
+    """
+    Determine the gait direction using a sliding window approach on the specified marker.
+    
+    For each window, this function computes the dominant movement direction using PCA on the x and z
+    coordinates, and returns the rotation angle (in radians) required to align that direction with the positive z-axis.
+    
+    Returns:
+        List of tuples (window_center_index, rotation_angle)
+    """
+    angles = []
+    num_frames = len(pose_data)
+    for start in range(0, num_frames - window_size + 1, step_size):
+        end = start + window_size
+        window_data = pose_data.iloc[start:end]
+        x_coords = window_data[(marker, 'x')].to_numpy()
+        z_coords = window_data[(marker, 'z')].to_numpy()
+        positions = np.column_stack((x_coords, z_coords))
+        
+        pca = PCA(n_components=1)
+        pca.fit(positions)
+        principal_vector = pca.components_[0]  # [v_x, v_z]
+        
+        # Compute the angle between the principal vector and the positive z-axis.
+        # np.arctan2 returns the angle (in radians) between the vector (v_x, v_z) and the positive x-axis;
+        # here we compute arctan2(v_x, v_z) so that 0 means aligned with positive z.
+        angle = np.arctan2(principal_vector[0], principal_vector[1])
+        # To align with the positive z-axis, we need to rotate by -angle.
+        window_center = start + window_size // 2
+        angles.append((window_center, -angle))
+    return angles
+
+def compute_framewise_rotation_angles(pose_data, marker="sacrum", window_size=100, step_size=50):
+    """
+    Computes a rotation angle for each frame by interpolating the angles computed from a sliding window approach.
+    
+    Returns:
+        A 1D numpy array of rotation angles (in radians), one for each frame.
+    """
+    sliding_angles = determine_gait_direction_sliding_window(pose_data, marker, window_size, step_size)
+    if not sliding_angles:
+        return np.zeros(len(pose_data))
+    centers, window_angles = zip(*sliding_angles)
+    centers = np.array(centers)
+    window_angles = np.array(window_angles)
+    num_frames = len(pose_data)
+    frame_indices = np.arange(num_frames)
+    # Linear interpolation of the computed angles over all frames
+    framewise_angles = np.interp(frame_indices, centers, window_angles)
+    return framewise_angles
+
+def rotate_pose_data_framewise(pose_data, rotation_angles):
+    """
+    Rotates the x and z coordinates of pose_data for each frame based on the corresponding rotation angle.
+    
+    Parameters:
+        pose_data (pd.DataFrame): DataFrame with MultiIndex columns (marker, axis).
+        rotation_angles (np.array): 1D array of rotation angles (in radians), one per frame.
+    
+    Returns:
+        pd.DataFrame: The rotated pose data.
+    """
+    new_data = pose_data.copy()
+    markers = pose_data.columns.get_level_values(0).unique()
+    # Loop over each marker that has x and z coordinates.
+    for marker in markers:
+        if (marker, 'x') in pose_data.columns and (marker, 'z') in pose_data.columns:
+            x_orig = pose_data[(marker, 'x')].to_numpy()
+            z_orig = pose_data[(marker, 'z')].to_numpy()
+            # Apply per-frame rotation.
+            new_x = x_orig * np.cos(rotation_angles) - z_orig * np.sin(rotation_angles)
+            new_z = x_orig * np.sin(rotation_angles) + z_orig * np.cos(rotation_angles)
+            new_data[(marker, 'x')] = new_x
+            new_data[(marker, 'z')] = new_z
+    return new_data
 
 class EventDetector:
-    """Detects the heel strike and toe-off events from the pose estimation using the specified algorithm
-        - Heel strike (HS) is the moment the heel touches the ground
-        - Toe-off (TO) is the moment the toe touches the ground
+    """
+    Detects the heel strike (HS) and toe-off (TO) events from pose estimation data using a specified algorithm.
+    
+    Now incorporates dynamic rotation of the coordinate system by computing the local gait direction
+    over a sliding window, then rotating the pose data accordingly.
     """
     
-    def __init__(self, algorithm="zeni", frame_rate=25):
+    def __init__(self, algorithm="zeni", frame_rate=25, window_size=100, step_size=50):
+        """
+        Parameters:
+            algorithm (str): Which detection algorithm to use ("zeni", "dewitt", etc.).
+            frame_rate (int): Frame rate of the input data.
+            window_size (int): Number of frames per window for gait direction estimation.
+            step_size (int): Number of frames to shift the window on each step.
+        """
         self.algorithm = algorithm
         self.frame_rate = frame_rate
-
+        self.window_size = window_size
+        self.step_size = step_size
+    
     def detect_heel_toe_events(self, pose_data):
         """
-        Detects heel strike and toe-off events based on the specified algorithm.
+        Detects heel strike and toe-off events using the selected algorithm.
+        
+        First, it computes a framewise rotation angle using a sliding window approach on the sacrum marker,
+        rotates the pose data accordingly (so that the dominant gait direction aligns with the positive z-axis),
+        and then runs the event detection algorithm.
         
         Parameters:
-        - pose_data: Pandas DataFrame containing pose estimation data with columns
-                     for heel, and toe markers in x, y, z coordinates.
-        
+            pose_data (pd.DataFrame): Pose estimation data.
+            
         Returns:
-        - Dictionary with timestamp of heel strike and toe-off events for left and right foot.
-            - {
-                    "HS_left": [...], "TO_left": [...],
-                    "HS_right": [...], "TO_right": [...]
-                }
+            pd.DataFrame: DataFrame with detected event times.
         """
+        # Compute framewise rotation angles based on the sacrum trajectory.
+        rotation_angles = compute_framewise_rotation_angles(
+            pose_data,
+            marker="sacrum",
+            window_size=self.window_size,
+            step_size=self.step_size
+        )
+        # Rotate the pose data framewise.
+        rotated_pose_data = rotate_pose_data_framewise(pose_data, rotation_angles)
+        
+        # (Optional) Plot the rotated raw pose data for debugging/visualization.
+        plot_raw_pose(rotated_pose_data, self.frame_rate, output_dir="plots")
+        
+        # Proceed with event detection using the rotated data.
         if self.algorithm == "zeni":
-            return self._detect_events_zeni(pose_data)
+            return self._detect_events_zeni(rotated_pose_data)
         elif self.algorithm == "dewitt":
-            return self._detect_events_dewitt(pose_data)
+            return self._detect_events_dewitt(rotated_pose_data)
         elif self.algorithm == "hreljac":
-            return self._detect_events_hreljac(pose_data)
+            return self._detect_events_hreljac(rotated_pose_data)
         else:
             raise ValueError("Unsupported algorithm")
-
-    #TODO: check if I can add url of paper to docstring
+    
     def _detect_events_zeni(self, pose_data):
         """Detects heel strike (HS) and toe-off (TO) events using Zeni et al.'s method."""
-        
-        # Plot raw heel and toe time series
-        plot_raw_pose(pose_data, self.frame_rate, output_dir="plots")
-
-        # TODO: Could be better as: "HS_left": pd.Series([])
-        events = {"HS_left": [], "TO_left": [], "HS_right": [], "TO_right": []}
-        
-        # Compute sacrum coordinates as the midpoint of left and right hip
+        # Compute sacrum as the midpoint of the left and right hips.
         for axis in ['x', 'y', 'z']:
             pose_data[('sacrum', axis)] = (pose_data[('left_hip', axis)] + pose_data[('right_hip', axis)]) / 2
         
-        sacrum_z = pose_data[('sacrum', 'z')]
-
-        # # Compute relative X positions for left and right foot
-        # heel_left_z = pose_data[('left_heel', 'z')] 
-        # heel_right_z = pose_data[('right_heel', 'z')] 
-        # toe_left_z = pose_data[('left_foot_index', 'z')] 
-        # toe_right_z = pose_data[('right_foot_index', 'z')]
-
-
-        # # Compute relative displacements
-        # extremas_data = {-
-        # "heel_left": heel_left_z - sacrum_z,
-        # "heel_right": heel_right_z - sacrum_z,
-        # "toe_left": toe_left_z - sacrum_z,
-        # "toe_right": toe_right_z - sacrum_z
-        # }
-
-        # # Filter signals
-        # filtered_extremas = {key: butter_lowpass_filter(value) for key, value in extremas_data.items()}
+        # Using the rotated coordinate system, assume that the forward movement is now along the z-axis.
+        heel_left_forward = pose_data[('left_heel', 'z')] - pose_data[('sacrum', 'z')]
+        heel_right_forward = pose_data[('right_heel', 'z')] - pose_data[('sacrum', 'z')]
+        toe_left_forward = pose_data[('left_foot_index', 'z')] - pose_data[('sacrum', 'z')]
+        toe_right_forward = pose_data[('right_foot_index', 'z')] - pose_data[('sacrum', 'z')]
         
-        # # Detect peaks and valleys
-        # detected_extremas = {key: detect_extremas(value) for key, value in filtered_extremas.items()}
+        # Calculate thresholds as the mean of the forward positions.
+        threshold_heel_left = np.mean(heel_left_forward)
+        threshold_heel_right = np.mean(heel_right_forward)
+        threshold_toe_left = np.mean(toe_left_forward)
+        threshold_toe_right = np.mean(toe_right_forward)
         
-        # # Convert to time-based peaks
-        # extrema_times = {key: (peaks/self.frame_rate, valleys/self.frame_rate) for key, (peaks, valleys) in detected_extremas.items()}
-
-
-
-        # Compute relative X positions for left and right foot
-        heel_left_z = pose_data[('left_heel', 'z')] - pose_data[('sacrum', 'z')]
-        heel_right_z = pose_data[('right_heel', 'z')] - pose_data[('sacrum', 'z')]
-        toe_left_z = pose_data[('left_foot_index', 'z')] - pose_data[('sacrum', 'z')]
-        toe_right_z = pose_data[('right_foot_index', 'z')] - pose_data[('sacrum', 'z')]
-
-        # Calculate threshold as the mean of the relative positions
-        threshold_heel_left = np.mean(heel_left_z)
-        threshold_heel_right = np.mean(heel_right_z)
-        threshold_toe_left = np.mean(toe_left_z)
-        threshold_toe_right = np.mean(toe_right_z)
-
-        # Detect peaks (HS) and valleys (TO) using find_peaks
-        hs_left_idx, _ = find_peaks(heel_left_z, height=threshold_heel_left)
-        to_left_idx, _ = find_peaks(-toe_left_z, height=-threshold_toe_left)
-        hs_right_idx, _ = find_peaks(heel_right_z, height=threshold_heel_right)
-        to_right_idx, _ = find_peaks(-toe_right_z, height=-threshold_toe_right)
-
-
+        # Detect events: peaks (HS) and valleys (TO) using the thresholds.
+        hs_left_idx, _ = find_peaks(heel_left_forward, height=threshold_heel_left)
+        hs_right_idx, _ = find_peaks(heel_right_forward, height=threshold_heel_right)
+        to_left_idx, _ = find_peaks(-toe_left_forward, height=-threshold_toe_left)
+        to_right_idx, _ = find_peaks(-toe_right_forward, height=-threshold_toe_right)
+        
         extremas_data = {
-            "heel_left":  hs_left_idx / self.frame_rate,
-            "heel_right": to_left_idx / self.frame_rate,
-            "toe_left": hs_right_idx / self.frame_rate,
+            "heel_left": hs_left_idx / self.frame_rate,
+            "heel_right": hs_right_idx / self.frame_rate,
+            "toe_left": to_left_idx / self.frame_rate,
             "toe_right": to_right_idx / self.frame_rate
         }
-
+        
         plot_extremas(pose_data, self.frame_rate, output_dir="plots")
-
     
-        # Find the maximum length of lists
         max_length = max(len(v) for v in extremas_data.values())
-
-        # Create a DataFrame for detected events with NaN padding
         events = pd.DataFrame({
-            key: pd.Series(values + [np.nan] * (max_length - len(values))) 
+            key: pd.Series(list(values) + [np.nan] * (max_length - len(values)))
             for key, values in extremas_data.items()
         })
-
-
-        return pd.DataFrame(events)
-
-    # def _detect_events_dewitt(self, pose_data):
-    #     """Detects toe-off (TO) events using the DeWitt et al. method."""
-        
-    #     events = {"HS_left": [], "TO_left": [], "HS_right": [], "TO_right": []}
-
-    #     # Extract vertical (y-axis) data for the toe and heel markers
-    #     toe_left_y = pose_data[('left_foot_index', 'y')]
-    #     toe_right_y = pose_data[('right_foot_index', 'y')]
-    #     heel_right_y = pose_data[('right_heel', 'y')]
-    #     heel_left_y = pose_data[('left_heel', 'y')]
-
-    #     # Calculate time between frames
-    #     tint = 1 / self.frame_rate
-
-    #     # Get Heel Strike times using Zeni method
-    #     hs_to_zeni = self._detect_events_zeni(pose_data)
-    #     hs_zeni_left = hs_to_zeni['HS_left']
-    #     hs_zeni_right = hs_to_zeni['HS_right']
-
-    #     # Compute acceleration and jerk for the toe marker (finite differences)
-    #     toe_left_acc = np.gradient(np.gradient(toe_left_y, tint), tint)
-    #     toe_right_acc = np.gradient(np.gradient(toe_right_y, tint), tint)
-
-    #     toe_left_jerk = np.gradient(toe_left_acc, tint)
-    #     toe_right_jerk = np.gradient(toe_right_acc, tint)
-
-    #     # Find local maxima in toe acceleration (candidates for TOEY)
-    #     toe_left_acc_peaks, _ = find_peaks(toe_left_acc)
-    #     toe_right_acc_peaks, _ = find_peaks(toe_right_acc)
-
-    #     # Process the detected peaks and determine toe-off times
-    #     toe_off_times_left = self._process_toe_off_peaks(toe_left_acc_peaks, hs_zeni_left, toe_left_jerk)
-    #     toe_off_times_right = self._process_toe_off_peaks(toe_right_acc_peaks, hs_zeni_right, toe_right_jerk)
-
-    #     # Store events
-    #     events["HS_left"] = hs_zeni_left
-    #     events["TO_left"] = toe_off_times_left
-    #     events["HS_right"] = hs_zeni_right
-    #     events["TO_right"] = toe_off_times_right
-
-    #     return pd.DataFrame(events)
-
-    # def _process_toe_off_peaks(self, toe_acc_peaks, hs_times, toe_jerk):
-    #     """Process peaks in toe acceleration to find toe-off times."""
-    #     toe_off_times = []
-    #     for peak_idx in toe_acc_peaks:
-    #         # Ensure the peak lies between the previous HS and next HS
-    #         prev_hs = max([i for i, hs in enumerate(hs_times) if hs < peak_idx])
-    #         next_hs = min([i for i, hs in enumerate(hs_times) if hs > peak_idx])
-
-    #         # Find jerk transition through zero (TOEY criterion)
-    #         t1, t2 = self._find_jerk_transition(toe_jerk, peak_idx, prev_hs, next_hs)
-
-    #         if t1 is not None and t2 is not None:
-    #             # Interpolate to find the exact time of jerk = 0
-    #             J_t1 = toe_jerk[t1]
-    #             J_t2 = toe_jerk[t2]
-    #             time_toey = t1 + (J_t1 / (J_t1 - J_t2)) * (1 / self.frame_rate)
-    #             toe_off_times.append(time_toey)
-    #     return toe_off_times
-
-    # def _find_jerk_transition(self, jerk, peak_idx, prev_hs, next_hs):
-    #     """Find the time where jerk transitions from positive to negative."""
-    #     t1, t2 = None, None
-    #     for i in range(peak_idx, next_hs):
-    #         if jerk[i] > 0 and jerk[i + 1] < 0:
-    #             t1, t2 = i, i + 1
-    #             break
-    #     return t1, t2
-
-    # def _detect_events_hreljac(self, pose_data):
-    #     """Detects events using the Hreljac algorithm."""
-        
-    #     events = {"HS_left": [], "TO_left": [], "HS_right": [], "TO_right": []}
-        
-    #     # Frame interval
-    #     frame_interval = 1 / self.frame_rate
-        
-    #     # Iterate over both sides (left and right foot)
-    #     for side in ["left", "right"]:
-    #         # Extract relevant columns for the current foot
-    #         heel_y = pose_data[(f'{side}_heel', 'y')]
-    #         toe_x = pose_data[(f'{side}_foot_index', 'x')]
-
-    #         # Compute derivatives for heel vertical position (HS detection)
-    #         heel_accel = heel_y.diff().diff() / frame_interval**2  # 2nd derivative
-    #         heel_jerk = heel_accel.diff() / frame_interval         # 3rd derivative
-
-    #         # Compute derivatives for toe horizontal position (TO detection)
-    #         toe_accel = toe_x.diff().diff() / frame_interval**2    # 2nd derivative
-    #         toe_jerk = toe_accel.diff() / frame_interval           # 3rd derivative
-
-    #         # Detect HS (local maxima in heel acceleration where jerk crosses zero)
-    #         hs_indices = [i for i in range(1, len(heel_jerk) - 1) if heel_jerk[i - 1] > 0 and heel_jerk[i + 1] < 0]
-    #         hs_times = [i * frame_interval + (heel_jerk[i] / (heel_jerk[i] - heel_jerk[i + 1])) * frame_interval for i in hs_indices]
-
-    #         # Detect TO (local maxima in toe acceleration where jerk crosses zero)
-    #         to_indices = [i for i in range(1, len(toe_jerk) - 1) if toe_jerk[i - 1] > 0 and toe_jerk[i + 1] < 0]
-    #         to_times = [i * frame_interval + (toe_jerk[i] / (toe_jerk[i] - toe_jerk[i + 1])) * frame_interval for i in to_indices]
-
-    #         # Save results for the current side
-    #         events[f"HS_{side}"] = hs_times
-    #         events[f"TO_{side}"] = to_times
-
-        # return pd.DataFrame(events)
+        return events
+    
+    # The _detect_events_dewitt and _detect_events_hreljac methods can be updated similarly if needed.
