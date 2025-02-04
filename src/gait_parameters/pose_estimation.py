@@ -19,7 +19,7 @@ from mediapipe_landmarks import prepare_empty_dataframe
 
 
 class PoseEstimator:
-    def __init__(self, make_video: bool = False, make_csv: bool = True, plot: bool = False):
+    def __init__(self, make_video: bool = True, make_csv: bool = True, plot: bool = False):
         """
         Initialize the PoseEstimator with required paths and configurations.
 
@@ -33,9 +33,10 @@ class PoseEstimator:
         self.plot = plot
         self.hand_model_path = './models/hand_landmarker.task'
         self.pose_model_path = './models/pose_landmarker_heavy.task'
-        self.hands = self._load_hand_model()
-        self.pose = self._load_pose_model()
         self.logger = self._setup_logger()
+
+        # Initialize MediaPipe models
+        self.initialize_mediapipe_models()
 
     @staticmethod
     def _setup_logger() -> logging.Logger:
@@ -50,6 +51,14 @@ class PoseEstimator:
             format='%(asctime)s - %(levelname)s - %(message)s',
         )
         return logging.getLogger("PoseEstimator")
+    
+    def initialize_mediapipe_models(self):
+        """
+        (Re)Initializes MediaPipe models for hands and pose detection.
+        """
+        self.hands = self._load_hand_model()
+        self.pose = self._load_pose_model()
+        self.logger.debug("MediaPipe models have been initialized.")
     
     def draw_pose_landmarks_on_image(self, image: np.ndarray, detection_result: Any) -> np.ndarray:
         """
@@ -201,6 +210,8 @@ class PoseEstimator:
             Optional[Any]: DataFrame containing landmark pose data if CSV generation is enabled, otherwise None. 
                             Video with tracking if video generation is enabled.
         """
+        self.initialize_mediapipe_models()
+
         tracked_csv_path, tracked_video_path = self.prepare_file_paths(video_path, tracked_csv_dir, tracked_video_dir)
 
         # Check if the CSV already exists to skip processing
