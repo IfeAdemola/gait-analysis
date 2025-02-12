@@ -7,6 +7,7 @@ from typing import Optional, Any, Tuple
 
 import os
 import glob
+import json
 
 import logging
 
@@ -225,7 +226,8 @@ class PoseEstimator:
         videogen = list(skvideo.io.vreader(video_path))
         metadata = skvideo.io.ffprobe(video_path)
         fs = int(metadata['video']['@r_frame_rate'].split('/')[0])
-        writer = skvideo.io.FFmpegWriter(tracked_video_path) if self.make_video else None
+        self.logger.info(f"Video loaded. Frame rate: {fs} fps.")
+        writer = skvideo.io.FFmpegWriter(tracked_video_path, outputdict={"-r": str(fs)}) if self.make_video else None
 
         marker_df, marker_mapping = prepare_empty_dataframe(hands='both', pose=True)
 
@@ -272,6 +274,12 @@ class PoseEstimator:
         if self.make_csv:
             marker_df.to_csv(tracked_csv_path, index=False)
             self.logger.info(f"Saved pose estimation CSV to {tracked_csv_path}")
+
+            # store frame rate
+            metadata = {"fps": fs}
+            with open(tracked_csv_path.replace(".csv", "_metadata.json"), "w") as f:
+                json.dump(metadata, f)
+
 
 
         if self.make_video:
