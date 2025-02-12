@@ -3,8 +3,7 @@ import pandas as pd
 import csv
 
 from scipy.signal import find_peaks
-from scipy import signal
-from scipy.signal import hilbert, butter, lfilter, medfilt
+from scipy.signal import hilbert, butter, lfilter, medfilt, filtfilt
 
 
 # --- File Handling Utilities ---
@@ -76,6 +75,13 @@ def detect_peaks(signal, threshold=0.5):
     return peaks
 
 # --- Filtering Utilities ---
+def butter_lowpass_filter(data, cutoff=3, fs=30, order=4):
+    """Filter signal using a lowpass Butterworth filter."""
+    nyquist = 0.5 * fs
+    normal_cutoff = cutoff / nyquist
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return filtfilt(b, a, data)
+
 def butter_bandpass(lowcut, highcut, fs, order=5):
     """Design a Butterworth bandpass filter."""
     nyq = 0.5 * fs
