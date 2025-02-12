@@ -1,10 +1,9 @@
 import numpy as np
 import pandas as pd
 
-from scipy import signal
-from scipy.signal import medfilt
+from scipy.signal import hilbert, butter, lfilter, medfilt, filtfilt
 
-from utils import log
+from utils import log, butter_lowpass_filter
 
 class Preprocessor:
     def __init__(self, pose_data):
@@ -19,42 +18,18 @@ class Preprocessor:
         self.pose_data = pose_data
         log("Preprocessor initialized with pose data.", level="INFO")
 
-    def median_filter(self, window_size=5):
+    def handle_missing_values(self):
         """
-        Applies a median filter to positional coordinates.
-
-        Parameters:
-            window_size (int): Size of the window for the median filter. Must be an odd number.
-
-        Returns:
-            DataFrame: Pose data with missing values interpolated and coordinates filtered.
+        Interpolate missing values using linear interpolation.
         """
-        if window_size % 2 == 0:
-            raise ValueError("window_size must be an odd number.")
-        
-        log("Applying median filter...", level="INFO")
-        filtered_pose_data = self.pose_data.copy()
-
-        # Interpolate missing values for numeric columns
-        numeric_columns = filtered_pose_data.select_dtypes(include=['number']).columns
-        filtered_pose_data[numeric_columns] = (
-            filtered_pose_data[numeric_columns].interpolate(method='linear').ffill().bfill()
+        numeric_columns = self.pose_data.select_dtypes(include=['number']).columns
+        self.pose_data[numeric_columns] = (
+            self.pose_data[numeric_columns].interpolate(method='linear').ffill().bfill()
         )
-
-        # Apply median filter to each landmark's coordinates
-        for landmark in filtered_pose_data.columns.levels[0]:
-            for coord in ['x', 'y', 'z']:
-                if (landmark, coord) in filtered_pose_data.columns:
-                    filtered_pose_data[(landmark, coord)] = medfilt(
-                        filtered_pose_data[(landmark, coord)], kernel_size=window_size
-                    )
-        
-        log("Median filtering complete.", level="INFO")
-        return filtered_pose_data
-
+    
     def normalize(self, window_size=5):
         """
-        Normalizes gait data by the distance between specific landmarks (e.g., knee and ankle).
+        Normalizes pose data by the distance between specific landmarks (e.g., knee and ankle).
 
         Parameters:
             window_size (int): Size of the window for the median filter. Must be an odd number.
@@ -63,69 +38,53 @@ class Preprocessor:
             DataFrame: Normalized pose data.
         """
         log("Starting normalization process...", level="INFO")
-        filtered_pose_data = self.median_filter(window_size=window_size)
 
-        # Calculate distances between left/right knee and ankle
         try:
             left_leg_length = np.sqrt(
-                (filtered_pose_data[('left_knee', 'x')] - filtered_pose_data[('left_ankle', 'x')]) ** 2 +
-                (filtered_pose_data[('left_knee', 'y')] - filtered_pose_data[('left_ankle', 'y')]) ** 2 +
-                (filtered_pose_data[('left_knee', 'z')] - filtered_pose_data[('left_ankle', 'z')]) ** 2
+                (self.pose_data[('left_knee', 'x')] - self.pose_data[('left_ankle', 'x')]) ** 2 +
+                (self.pose_data[('left_knee', 'y')] - self.pose_data[('left_ankle', 'y')]) ** 2 +
+                (self.pose_data[('left_knee', 'z')] - self.pose_data[('left_ankle', 'z')]) ** 2
             )
             right_leg_length = np.sqrt(
-                (filtered_pose_data[('right_knee', 'x')] - filtered_pose_data[('right_ankle', 'x')]) ** 2 +
-                (filtered_pose_data[('right_knee', 'y')] - filtered_pose_data[('right_ankle', 'y')]) ** 2 +
-                (filtered_pose_data[('right_knee', 'z')] - filtered_pose_data[('right_ankle', 'z')]) ** 2
+                (self.pose_data[('right_knee', 'x')] - self.pose_data[('right_ankle', 'x')]) ** 2 +
+                (self.pose_data[('right_knee', 'y')] - self.pose_data[('right_ankle', 'y')]) ** 2 +
+                (self.pose_data[('right_knee', 'z')] - self.pose_data[('right_ankle', 'z')]) ** 2
             )
         except KeyError as e:
             log(f"Missing columns for leg length calculation: {e}", level="ERROR")
             raise KeyError(f"Missing expected columns in filtered_pose_data: {e}")
-        
-        # Ensure leg lengths are arrays
-        if np.isscalar(left_leg_length) or np.isscalar(right_leg_length):
-            raise ValueError("Leg lengths should be arrays, but scalar values were found")
 
+        # Apply median filter properly
+        left_leg_length = medfilt(left_leg_length, kernel_size=window_size)
+        right_leg_length = medfilt(right_leg_length, kernel_size=window_size)
 
-        # Smooth leg lengths using median filter
-        left_leg_length = np.median(medfilt(left_leg_length, kernel_size=5))
-        right_leg_length = np.median(medfilt(right_leg_length, kernel_size=5))
-
-        normalized_data = filtered_pose_data.copy()
+        # Add small epsilon to avoid division by zero
+        left_leg_length += 1e-6
+        right_leg_length += 1e-6
 
         # Normalize each landmark's coordinates
-        for landmark in filtered_pose_data.columns.levels[0]:
+        for landmark in set(self.pose_data.columns.get_level_values(0)):  # Fix MultiIndex handling
             for coord in ['x', 'y', 'z']:
-                if (landmark, coord) in filtered_pose_data.columns:
+                if (landmark, coord) in self.pose_data.columns:
                     if 'left' in landmark:
-                        normalized_data[(landmark, coord)] /= left_leg_length
+                        self.pose_data[(landmark, coord)] /= left_leg_length
                     elif 'right' in landmark:
-                        normalized_data[(landmark, coord)] /= right_leg_length
+                        self.pose_data[(landmark, coord)] /= right_leg_length
 
         log("Normalization complete.", level="INFO")
-        return normalized_data
 
-    def preprocess(self, window_size=5):
+    def preprocess(self):
             """
             Executes the full preprocessing pipeline: filtering and normalization.
-
-            Parameters:
-                window_size (int): Size of the window for median filtering.
 
             Returns:
                 DataFrame: Fully preprocessed pose data.
             """
             log("Starting full preprocessing pipeline...", level="INFO")
-            normalized_data = self.normalize(window_size=window_size)
+            self.handle_missing_values()
+            self.pose_data = butter_lowpass_filter(self.pose_data)
+            self.normalize()
             log("Preprocessing pipeline complete.", level="INFO")
-            return normalized_data
-
-
-
-
-
-
-
-def resample_signal():
-    """DTW: dynamic time warping"""
+            return self.pose_data
 
 
