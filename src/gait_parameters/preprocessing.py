@@ -18,6 +18,22 @@ class Preprocessor:
         self.pose_data = pose_data
         log("Preprocessor initialized with pose data.", level="INFO")
 
+    def compute_sacrum(self):
+        """
+        Computes the sacrum position as the midpoint between the left and right hips.
+        """
+        
+        def compute_midpoint(p1, p2, axis):
+            """Computes the midpoint between two points along a given axis."""
+            return (self.pose_data[(p1, axis)] + self.pose_data[(p2, axis)]) / 2
+
+        try:
+            for axis in ['x', 'y', 'z']:
+                self.pose_data[('sacrum', axis)] = compute_midpoint('left_hip', 'right_hip', axis)                 
+        except KeyError as e:
+            log(f"Missing columns for sacrum calculation: {e}", level="ERROR")
+            raise KeyError(f"Missing expected columns in pose_data: {e}")
+           
     def handle_missing_values(self):
         """
         Interpolate missing values using linear interpolation.
@@ -73,7 +89,7 @@ class Preprocessor:
 
         log("Normalization complete.", level="INFO")
 
-    def preprocess(self):
+    def preprocess(self, window_size):
             """
             Executes the full preprocessing pipeline: filtering and normalization.
 
@@ -81,9 +97,10 @@ class Preprocessor:
                 DataFrame: Fully preprocessed pose data.
             """
             log("Starting full preprocessing pipeline...", level="INFO")
+            self.compute_sacrum()
             self.handle_missing_values()
             self.pose_data = butter_lowpass_filter(self.pose_data)
-            self.normalize()
+            self.normalize(window_size=window_size)
             log("Preprocessing pipeline complete.", level="INFO")
             return self.pose_data
 
