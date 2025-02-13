@@ -1,7 +1,9 @@
 import argparse
 import os
-from gait_pipeline import GaitPipeline
 import pandas as pd
+
+from gait_pipeline import GaitPipeline
+
 
 def parse_args():
     """
