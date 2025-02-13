@@ -12,7 +12,7 @@ This module computes spatiotemporal gait parameters from video recordings. The p
 ## **Steps in the Pipeline**
 
 ### **1. Pose Estimation**
-- **Script**: `pose_estimation.py`
+- **Script**: `modules/pose_estimation.py`
 - **Input**: A video file in `.mp4` or `.mov` format.
 - **Process**: Uses [MediaPipe](https://github.com/google-ai-edge/mediapipe) for pose tracking to extract the `(x, y, z)` positions of body landmarks.
 - **Output**: A `.csv` file containing pose data for each frame of the video.
@@ -20,7 +20,7 @@ This module computes spatiotemporal gait parameters from video recordings. The p
 ---
 
 ### **2. Signal Preprocessing**
-- **Script**: `preprocessing.py`
+- **Script**: `modules/preprocessing.py`
 - **Input**: The pose data `.csv` generated in the previous step.
 - **Process**:
   - **Empty cell interpolation**: Fills missing values in the pose data.
@@ -31,7 +31,7 @@ This module computes spatiotemporal gait parameters from video recordings. The p
 ---
 
 ### **3. Heel Strike and Toe-Off Detection**
-- **Script**: `event_detection.py`
+- **Script**: `modules/event_detection.py`
 - **Input**: Preprocessed pose data `.csv`, algorithm type, and video frame rate.
 - **Process**: Detects gait events:
   - **Heel strike (HS)**: The moment the heel touches the ground.
@@ -47,7 +47,7 @@ This module computes spatiotemporal gait parameters from video recordings. The p
 ---
 
 ### **4. Gait Parameters Calculation**
-- **Script**: `gait_params.py`
+- **Script**: `modules/parameters_computation.py`
 - **Input**: The events DataFrame from the previous step.
 - **Process**: Calculates gait parameters based on the detected events.
 - **Output**: A `.csv` file containing gait parameters for the left and right sides.
@@ -68,10 +68,10 @@ This module computes spatiotemporal gait parameters from video recordings. The p
 You can either:
 1. **Run scripts independently**:
    ```bash
-   python pose_estimation.py --input video.mp4 --output pose_data.csv
-   python preprocessing.py --input pose_data.csv --output preprocessed_data.csv
-   python event_detection.py --input preprocessed_data.csv --frame_rate 30 --algorithm zeni --output events.csv
-   python gait_params.py --input events.csv --output gait_parameters.csv
+   python modules/pose_estimation.py --input video.mp4 --output pose_data.csv
+   python modules/preprocessing.py --input pose_data.csv --output preprocessed_data.csv
+   python modules/event_detection.py --input preprocessed_data.csv --frame_rate 30 --algorithm zeni --output events.csv
+   python modules/gait_params.py --input events.csv --output gait_parameters.csv
 
 2. **Run the entire pipeline**:
    - To process videos in a directory, run:
