@@ -1,5 +1,7 @@
 import os
 import pandas as pd
+import numpy as np
+
 import csv
 
 from scipy.signal import find_peaks
@@ -75,12 +77,30 @@ def detect_peaks(signal, threshold=0.5):
     return peaks
 
 # --- Filtering Utilities ---
-def butter_lowpass_filter(data, cutoff=3, fs=30, order=4):
-    """Filter signal using a lowpass Butterworth filter."""
+def butter_lowpass_filter(df, columns=None, cutoff=3, fs=30, order=4):
+    """Apply a lowpass Butterworth filter to specified columns of a DataFrame."""
     nyquist = 0.5 * fs
     normal_cutoff = cutoff / nyquist
     b, a = butter(order, normal_cutoff, btype='low', analog=False)
-    return filtfilt(b, a, data)
+
+    # Automatically exclude columns with these keywords in their name
+    exclude_keywords = ["marker", "subindex", "visibility", "presence"]
+    
+    def should_exclude(column):
+        """Check if any level of a MultiIndex column contains an exclusion keyword."""
+        return any(keyword in str(level) for level in column for keyword in exclude_keywords)
+
+    # Select numeric columns that do NOT contain excluded keywords
+    filtered_columns = [
+        col for col in df.select_dtypes(include=[np.number]).columns
+        if not should_exclude(col)
+    ]
+
+    # Apply the filter to selected columns
+    filtered_df = df.copy()
+    filtered_df[filtered_columns] = filtered_df[filtered_columns].apply(lambda col: filtfilt(b, a, col.values))
+
+    return filtered_df
 
 def butter_bandpass(lowcut, highcut, fs, order=5):
     """Design a Butterworth bandpass filter."""
