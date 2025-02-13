@@ -16,7 +16,7 @@ from tqdm import tqdm
 from mediapipe.framework.formats import landmark_pb2
 from mediapipe import solutions
 
-from mediapipe_landmarks import prepare_empty_dataframe
+from utils.mediapipe_landmarks import prepare_empty_dataframe
 
 
 class PoseEstimator:

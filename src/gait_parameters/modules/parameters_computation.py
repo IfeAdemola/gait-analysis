@@ -1,7 +1,7 @@
 import numpy as np
-import pandas as pd
-from gait_parameters import prepare_gait_dataframe
-from utils import save_csv
+
+from utils.gait_parameters import prepare_gait_dataframe
+from utils.helpers import save_csv
 
 class GaitParameters:
     @staticmethod

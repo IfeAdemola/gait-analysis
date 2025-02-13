@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
 
-from scipy.signal import hilbert, butter, lfilter, medfilt, filtfilt
+from scipy.signal import medfilt
 
-from utils import log, butter_lowpass_filter
+from utils.helpers import log, butter_lowpass_filter
 
 class Preprocessor:
     def __init__(self, pose_data):
@@ -43,7 +43,7 @@ class Preprocessor:
             self.pose_data[numeric_columns].interpolate(method='linear').ffill().bfill()
         )
     
-    def normalize(self, window_size=5):
+    def normalize(self, window_size=31):
         """
         Normalizes pose data by the distance between specific landmarks (e.g., knee and ankle).
 

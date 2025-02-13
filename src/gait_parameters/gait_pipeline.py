@@ -1,11 +1,13 @@
 # gait_pipeline.py
 
 import pandas as pd
-from pose_estimation import PoseEstimator
-from preprocessing import Preprocessor
-from event_detection import EventDetector
-from gait_params import GaitParameters
-from utils import load_csv
+
+from modules.pose_estimation import PoseEstimator
+from modules.preprocessing import Preprocessor
+from modules.event_detection import EventDetector
+from modules.parameters_computation import GaitParameters
+
+from utils.helpers import load_csv
 
 class GaitPipeline:
     def __init__(self, input_path, config, save_parameters_path):

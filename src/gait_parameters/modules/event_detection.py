@@ -5,8 +5,8 @@ import pandas as pd
 
 from sklearn.decomposition import PCA
 
-from utils import detect_extremas
-from plotting import plot_raw_pose, plot_extremas, plot_extrema_frames
+from utils.helpers import detect_extremas
+from utils.plotting import plot_raw_pose, plot_extremas, plot_extrema_frames
 
 
 def determine_gait_direction_sliding_window(pose_data, marker="sacrum", window_size=100, step_size=50):
