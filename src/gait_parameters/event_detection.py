@@ -2,23 +2,12 @@
 
 import numpy as np
 import pandas as pd
-from scipy.signal import find_peaks, butter, filtfilt
+
 from sklearn.decomposition import PCA
+
+from utils import detect_extremas
 from plotting import plot_raw_pose, plot_extremas, plot_extrema_frames
 
-def butter_lowpass_filter(data, cutoff=3, fs=30, order=4):
-    """Filter signal using a lowpass Butterworth filter."""
-    nyquist = 0.5 * fs
-    normal_cutoff = cutoff / nyquist
-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
-    return filtfilt(b, a, data)
-
-def detect_extremas(signal):
-    """Find peaks and valleys in the filtered signal."""
-    threshold = np.mean(signal)
-    peaks, _ = find_peaks(signal, height=threshold)
-    valleys, _ = find_peaks(-signal, height=-threshold)
-    return peaks, valleys
 
 def determine_gait_direction_sliding_window(pose_data, marker="sacrum", window_size=100, step_size=50):
     """
@@ -154,43 +143,51 @@ class EventDetector:
         else:
             raise ValueError("Unsupported algorithm")
     
+    # TODO: More suitable name than "forward_movement"
     def _detect_events_zeni(self, pose_data):
         """Detects heel strike (HS) and toe-off (TO) events using Zeni et al.'s method."""
-        # Compute sacrum as the midpoint of the left and right hips.
-        for axis in ['x', 'y', 'z']:
-            pose_data[('sacrum', axis)] = (pose_data[('left_hip', axis)] + pose_data[('right_hip', axis)]) / 2
         
-        # Using the rotated coordinate system, assume that the forward movement is now along the z-axis.
-        heel_left_forward = pose_data[('left_heel', 'z')] - pose_data[('sacrum', 'z')]
-        heel_right_forward = pose_data[('right_heel', 'z')] - pose_data[('sacrum', 'z')]
-        toe_left_forward = pose_data[('left_foot_index', 'z')] - pose_data[('sacrum', 'z')]
-        toe_right_forward = pose_data[('right_foot_index', 'z')] - pose_data[('sacrum', 'z')]
-        
-        # Calculate thresholds as the mean of the forward positions.
-        threshold_heel_left = np.mean(heel_left_forward)
-        threshold_heel_right = np.mean(heel_right_forward)
-        threshold_toe_left = np.mean(toe_left_forward)
-        threshold_toe_right = np.mean(toe_right_forward)
-        
-        # Detect events: peaks (HS) and valleys (TO) using the thresholds.
-        hs_left_idx, _ = find_peaks(heel_left_forward, height=threshold_heel_left)
-        hs_right_idx, _ = find_peaks(heel_right_forward, height=threshold_heel_right)
-        to_left_idx, _ = find_peaks(-toe_left_forward, height=-threshold_toe_left)
-        to_right_idx, _ = find_peaks(-toe_right_forward, height=-threshold_toe_right)
-        
-        extremas_data = {
-            "heel_left": hs_left_idx / self.frame_rate,
-            "heel_right": hs_right_idx / self.frame_rate,
-            "toe_left": to_left_idx / self.frame_rate,
-            "toe_right": to_right_idx / self.frame_rate
-        }
-        
-        plot_extremas(pose_data, self.frame_rate, output_dir="plots")
+        all_forward_movement = {}
+        all_extrema_data = {}
+        event_extrema_data = {}
     
-        max_length = max(len(v) for v in extremas_data.values())
+        # Define foot landmarks and their corresponding event names
+        foot_landmarks = {
+            "heel_left": "left_heel",
+            "heel_right": "right_heel",
+            "toe_left": "left_foot_index",
+            "toe_right": "right_foot_index"
+        }
+
+        # Detect events using the generalized approach
+        for landmark_name, landmark in foot_landmarks.items():
+            forward_movement = pose_data[(landmark, 'z')] - pose_data[('sacrum', 'z')]
+            
+            # Store forward movement in a dictionary
+            all_forward_movement[landmark_name] = forward_movement
+
+            #Detect peaks and valleys
+            peaks, valleys = detect_extremas(forward_movement)
+
+            # Store both peaks and valleys for each event
+            all_extrema_data[landmark_name] = {
+                "peaks": peaks / self.frame_rate,  # Convert indices to time
+                "valleys": valleys / self.frame_rate
+            }
+            
+            if "heel" in landmark_name:
+                idx = peaks  # Heel Strike (HS)
+            else:
+                idx = valleys  # Toe-Off (TO)
+            
+            event_extrema_data[landmark_name] = idx / self.frame_rate  # Convert to time    
+            
+        plot_extremas(all_forward_movement, all_extrema_data, self.frame_rate, output_dir="plots")
+
+        max_length = max(len(v) for v in event_extrema_data.values())
         events = pd.DataFrame({
             key: pd.Series(list(values) + [np.nan] * (max_length - len(values)))
-            for key, values in extremas_data.items()
+            for key, values in event_extrema_data.items()
         })
         return events
     
