@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import numpy as np
-
 import csv
 
 from scipy.signal import find_peaks
@@ -32,7 +31,6 @@ def load_csv(file_path, header=[0,1]):
         print(f"Error loading CSV file: {e}")
         return None
 
-    
 def save_csv(data, file_path):
     """
     Saves the provided data to a CSV file.
@@ -41,29 +39,13 @@ def save_csv(data, file_path):
         data (dict): Dictionary containing the data to be saved.
         file_path (str): Path to the CSV file where the data will be saved.
     """
-    # Ensure save_path exists
-    os.makedirs(file_path, exist_ok=True)
+    # Ensure the directory for the file exists
+    directory = os.path.dirname(file_path)
+    os.makedirs(directory, exist_ok=True)
     
     df = pd.DataFrame(data)
     df.to_csv(file_path, index=False)
 
-# def save_csv(data, file_path, header=None, delimiter=','):
-#     """
-#     Saves a NumPy array to a CSV file.
-#     :param data: numpy array, the data to save
-#     :param file_path: str, path to save the CSV file
-#     :param header: list or None, column names for the CSV
-#     :param delimiter: str, the delimiter to use in the CSV file
-#     """
-#     try:
-#         with open(file_path, mode='w', newline='') as file:
-#             writer = csv.writer(file, delimiter=delimiter)
-#             if header:
-#                 writer.writerow(header)
-#             writer.writerows(data)
-#         log(f"Data successfully saved to {file_path}", level="INFO")
-#     except Exception as e:
-#         raise ValueError(f"Error saving CSV file: {e}")
 
 # --- Gait Analysis Utilities ---
 def detect_extremas(signal):

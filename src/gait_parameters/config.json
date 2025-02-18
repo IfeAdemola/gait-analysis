@@ -1,17 +1,19 @@
 {
-    "pose_estimator": {
-        "tracked_csv_dir": "./tracked_csv",
-        "tracked_video_dir": "./tracked_videos"
-    },
-    "preprocessing": {
-        "median_filter_window": 31,
-        "normalization": true
-    },
-    "event_detection": {
-        "algorithm": "zeni",
-        "frame_rate": 30
-    },
-    "gait_parameters": {
-        "save_path": "./gait_parameters"
-    }
+  "data_dir": "data",
+  "gait_parameters": {
+    "save_path": "output/gait_parameters"
+  },
+  "pose_estimator": {
+    "tracked_csv_dir": "output/tracked_csv",
+    "tracked_video_dir": "output/tracked_videos"
+  },
+  "event_detection": {
+    "algorithm": "zeni",
+    "frame_rate": 30,
+    "plots_dir": "output/plots"
+  },
+  "preprocessing": {
+    "median_filter_window": 31,
+    "normalization": true
+  }
 }
