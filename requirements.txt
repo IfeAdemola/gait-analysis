@@ -1,7 +1,7 @@
 opencv-python
 matplotlib==3.9.3
 mediapipe
-numpy
+numpy==1.23.5
 pandas
 scipy
 tqdm
