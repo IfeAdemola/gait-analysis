@@ -1,5 +1,6 @@
 import argparse
 import os
+import glob
 import pandas as pd
 
 from gait_pipeline import GaitPipeline
@@ -16,7 +17,7 @@ def parse_args():
 
     # Mutually exclusive group for input_path and input_dir
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('input_path', type=str, nargs='?', help="Path to the input file (CSV or video)")
+    group.add_argument('--input_path', type=str, nargs='?', help="Path to the input file (CSV or video)")
     group.add_argument('--input_dir', type=str, help="Directory containing input files")
 
     parser.add_argument('--config', type=str, default='config.json', help="Path to the configuration JSON file")
@@ -38,7 +39,7 @@ def load_config(config_path):
         config = json.load(file)
     return config
 
-def get_save_gait_parameters_path(args):
+def get_save_gait_parameters_path(input_file, output_dir='./gait_parameters'):
     """
     Save the gait parameters to a CSV file.
 
@@ -47,54 +48,65 @@ def get_save_gait_parameters_path(args):
     Returns: 
         output_path (str): Path to save the gait parameters CSV file.
     """
-    file_name = os.path.splitext(os.path.basename(args.input_path))[0]
-    base_folder = os.path.dirname(args.input_path)
+    file_name = os.path.splitext(os.path.basename(input_file))[0]
+    base_folder = os.path.dirname(input_file)
 
     # Ensure output_dir is set and create the directory if it doesn't exist
-    if not args.output_dir:
-        args.output_dir = os.path.join(base_folder, "gait_parameters")
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
-        print(f"Created output directory: {args.output_dir}")
+    if not output_dir:
+        output_dir = os.path.join(base_folder, "gait_parameters")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"Created output directory: {output_dir}")
 
     # Define the path where gait parameters df is to be saved
-    output_path = os.path.join(args.output_dir, f"{file_name}_gait_parameters.csv")
+    output_path = os.path.join(output_dir, f"{file_name}_gait_parameters.csv")
     return output_path
+
+def process_single_file(input_file, output_dir, config):
+    """Process a single file with the GaitPipeline."""
+    save_parameters_path = get_save_gait_parameters_path(input_file, output_dir)
+
+    pipeline = GaitPipeline(input_path=input_file, 
+                            config=config, 
+                            save_parameters_path=save_parameters_path)
+
+    pose_data = pipeline.load_input()
+    if pose_data is None:
+        print(f"Skipping {input_file} due to loading issues.")
+        return
+
+    pose_data = pipeline.preprocess()
+    events = pipeline.detect_events()
+    gait_parameters = pipeline.compute_gait_parameters()
+    
+    print(f"Processed {input_file}, gait parameters saved to {save_parameters_path}")
+
 
 # TODO: take care of batch processing for a main dir. Current implementation is for a file.
 def main():
     # Parse command-line arguments
     args = parse_args()
-
-    # Load the configuration
     config = load_config(args.config)
+    output_dir = args.output_dir
 
-    # Get the output path for gait parameters
-    save_parameters_path = get_save_gait_parameters_path(args)
+    if args.input_path:  # Process a single file
+        process_single_file(args.input_path, args.output_dir, config)
 
-    # Initialize the GaitPipeline with the input path and config
-    pipeline = GaitPipeline(input_path=args.input_path, 
-                            config=config, 
-                            save_parameters_path=save_parameters_path)
+    elif args.input_dir:  # Process all files in a directory
+        # Search for CSV and video files in the given directory
+        input_files = glob.glob(os.path.join(args.input_dir, "*.csv")) + \
+                      glob.glob(os.path.join(args.input_dir, "*.mp4")) + \
+                      glob.glob(os.path.join(args.input_dir, "*.mov"))
 
-    # Load the input data (either video or CSV)
-    pose_data = pipeline.load_input()
-    print(f"Loaded input data from {args.input_path}")
+        if not input_files:
+            print(f"No valid input files found in directory: {args.input_dir}")
+            return
 
-    if pose_data is None:
-        return
+        print(f"Found {len(input_files)} files to process in {args.input_dir}")
 
-    # Preprocess the pose data
-    pose_data = pipeline.preprocess()
-    print("Pose data preprocessed.")
+        for input_file in input_files:
+            process_single_file(input_file, output_dir, config)
 
-    # Detect events (heel strikes and toe-offs)
-    events = pipeline.detect_events()
-    print("Detected gait events.")
-
-    # Compute gait parameters based on events
-    gait_parameters = pipeline.compute_gait_parameters()
-    print("Gait parameters computed. Gait parameters saved to", save_parameters_path)
 
 if __name__ == "__main__":
     main()
