@@ -337,7 +337,7 @@ class PoseEstimator:
                 self.logger.debug(f"CSV folder already exists: {csv_folder}")
 
             # Find video files in the current folder
-            video_files = glob.glob(os.path.join(folder, "*.mp4")) + glob.glob(os.path.join(folder, "*.mov"))
+            video_files = glob.glob(os.path.join(folder, "*.mp4")) + glob.glob(os.path.join(folder, "*.mov")) + glob.glob(os.path.join(folder, "*.MP4"))
             if not video_files:
                 self.logger.warning(f"No video files found in {folder}")
                 continue
