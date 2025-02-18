@@ -4,7 +4,7 @@
         "tracked_video_dir": "./tracked_videos"
     },
     "preprocessing": {
-        "median_filter_window": 5,
+        "median_filter_window": 31,
         "normalization": true
     },
     "event_detection": {
