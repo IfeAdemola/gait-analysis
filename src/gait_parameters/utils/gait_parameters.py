@@ -20,9 +20,7 @@ parameters = {'num_steps',
               'swing', 
               'swing_asymmetry',
               'step_length', 
-              'step_length_asymmetry', 
               'stride_length', 
-              'stride_length_asymmetry',
               'gait_speed'
              }
 
