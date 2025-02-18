@@ -6,4 +6,4 @@ pandas
 scipy
 tqdm
 scikit-video
-sklearn-learn
+scikit-learn
