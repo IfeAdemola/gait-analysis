@@ -153,10 +153,10 @@ class EventDetector:
     
         # Define foot landmarks and their corresponding event names
         foot_landmarks = {
-            "heel_left": "left_heel",
-            "heel_right": "right_heel",
-            "toe_left": "left_foot_index",
-            "toe_right": "right_foot_index"
+            "HS_left": "left_heel",
+            "HS_right": "right_heel",
+            "TO_left": "left_foot_index",
+            "TO_right": "right_foot_index"
         }
 
         # Detect events using the generalized approach
@@ -175,7 +175,7 @@ class EventDetector:
                 "valleys": valleys / self.frame_rate
             }
             
-            if "heel" in landmark_name:
+            if "HS" in landmark_name:
                 idx = peaks  # Heel Strike (HS)
             else:
                 idx = valleys  # Toe-Off (TO)
