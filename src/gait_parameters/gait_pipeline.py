@@ -21,7 +21,7 @@ class GaitPipeline:
     def load_input(self):
         if self.input_path.endswith(".csv"):
             self.pose_data = load_csv(file_path=self.input_path)
-        elif self.input_path.endswith((".mp4", ".mov")):
+        elif self.input_path.endswith((".mp4", ".MP4", ".mov")):
             pose_estimator = PoseEstimator()
             self.pose_data = pose_estimator.process_video(video_path=self.input_path)
             if self.pose_data is not None:
