@@ -4,7 +4,7 @@ import glob
 import pandas as pd
 
 from gait_pipeline import GaitPipeline
-
+from utils.helpers import save_csv
 
 def parse_args():
     """
@@ -44,7 +44,7 @@ def get_save_gait_parameters_path(input_file, output_dir='./gait_parameters'):
     Save the gait parameters to a CSV file.
 
     Args:
-
+actually saved the gait parameters"
     Returns: 
         output_path (str): Path to save the gait parameters CSV file.
     """
@@ -64,7 +64,6 @@ def get_save_gait_parameters_path(input_file, output_dir='./gait_parameters'):
 
 def process_single_file(input_file, output_dir, config):
     """Process a single file with the GaitPipeline."""
-    save_parameters_path = get_save_gait_parameters_path(input_file, output_dir)
 
     pipeline = GaitPipeline(input_path=input_file, 
                             config=config, 
@@ -79,7 +78,11 @@ def process_single_file(input_file, output_dir, config):
     events = pipeline.detect_events()
     gait_parameters = pipeline.compute_gait_parameters()
     
+    save_parameters_path = get_save_gait_parameters_path(input_file, output_dir)
+    save_csv(gait_parameters, save_parameters_path)
+
     print(f"Processed {input_file}, gait parameters saved to {save_parameters_path}")
+
 
 
 # TODO: take care of batch processing for a main dir. Current implementation is for a file.
