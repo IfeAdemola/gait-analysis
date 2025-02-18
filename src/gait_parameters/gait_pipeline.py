@@ -16,6 +16,7 @@ class GaitPipeline:
         self.save_parameters_path = save_parameters_path
         self.pose_data = None
         self.events = None
+        self.gait_params = None
     
     def load_input(self):
         if self.input_path.endswith(".csv"):
@@ -41,4 +42,5 @@ class GaitPipeline:
 
     def compute_gait_parameters(self):
         gait_params = GaitParameters()
-        return gait_params.compute_parameters(self.events, save_path=self.save_parameters_path)
+        self.gait_params = gait_params.compute_parameters(self.events, save_path=self.save_parameters_path)
+        return self.gait_params
