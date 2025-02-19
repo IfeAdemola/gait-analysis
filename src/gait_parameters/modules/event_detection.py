@@ -53,8 +53,9 @@ class EventDetector:
     Detects heel strike (HS) and toe-off (TO) events from pose data.
     """
     
-    def __init__(self, algorithm="zeni", frame_rate=25, window_size=100, step_size=50, config=None, **kwargs):
+    def __init__(self, algorithm="zeni", make_plot=False, frame_rate=25, window_size=100, step_size=50, config=None, **kwargs):
         self.algorithm = algorithm
+        self.make_plot = make_plot
         self.frame_rate = frame_rate
         self.window_size = window_size
         self.step_size = step_size
@@ -79,10 +80,10 @@ class EventDetector:
             logger.exception("Error rotating pose data: %s", str(e))
             raise
 
-        try:
-            plot_raw_pose(rotated_pose_data, self.frame_rate, output_dir=self.plots_dir)
-        except Exception as e:
-            logger.exception("Error plotting raw pose data: %s", str(e))
+        # try:
+        #     plot_raw_pose(rotated_pose_data, self.frame_rate, output_dir=self.plots_dir)
+        # except Exception as e:
+        #     logger.exception("Error plotting raw pose data: %s", str(e))
 
         try:
             if self.algorithm == "zeni":
@@ -143,11 +144,9 @@ class EventDetector:
                 logger.exception("Error converting indices for landmark %s: %s", landmark, str(e))
                 event_extrema_data[landmark_name] = np.array([])
 
-        try:
+        if self.make_plot:
             plot_extremas(all_forward_movement, all_extrema_data, self.frame_rate, output_dir=self.plots_dir)
-        except Exception as e:
-            logger.exception("Error plotting extremas: %s", str(e))
-        
+       
         try:
             max_length = max(len(v) for v in event_extrema_data.values() if isinstance(v, (list, np.ndarray)))
         except Exception as e:
