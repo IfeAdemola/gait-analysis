@@ -7,7 +7,6 @@ from typing import Optional, Any, Tuple
 import os
 import glob
 import json
-import shutil
 import logging
 from tqdm import tqdm
 
@@ -15,18 +14,7 @@ from mediapipe.framework.formats import landmark_pb2
 from mediapipe import solutions
 
 from utils.mediapipe_landmarks import prepare_empty_dataframe
-
-
-def set_ffmpeg_path():
-    try:
-        # Check if ffmpeg is available in the system PATH
-        ffmpeg_path = shutil.which("ffmpeg")
-        if ffmpeg_path:
-            print(f"FFmpeg is available. Path: {ffmpeg_path}")
-            skvideo.setFFmpegPath(os.path.dirname(ffmpeg_path))
-    except FileNotFoundError:
-        print("FFmpeg is not found on the system.")
-    return
+from utils.helpers import set_ffmpeg_path
 
 
 def load_config(config_path):
