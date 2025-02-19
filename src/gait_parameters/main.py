@@ -54,7 +54,7 @@ def main():
     input_files = []
     for ext in ("*.csv", "*.mp4", "*.MP4", "*.mov", "*.MOV"):
         input_files.extend(glob.glob(os.path.join(data_dir, ext)))
-
+    print(input_files)
     if not input_files:
         logger.error("No valid input files found in %s", data_dir)
         return
@@ -120,7 +120,8 @@ def process_single_file(input_file, output_dir, config):
     # Run the pipeline
     pose_data = pipeline.load_input()
     if pose_data is None:
-        logger.error("Skipping %s due to loading issues.", input_file)
+        # TODO: Not necessarily an error. INFO logger
+        # logger.error("Skipping %s due to loading issues.", input_file)  
         return
 
     pipeline.preprocess()
