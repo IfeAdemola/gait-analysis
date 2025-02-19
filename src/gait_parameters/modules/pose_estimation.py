@@ -157,14 +157,30 @@ class PoseEstimator:
         
         tracked_csv_path, tracked_video_path = self.prepare_file_paths(video_path, tracked_csv_dir, tracked_video_dir)
         
-        # Skip processing if output files already exist
+        # If tracked CSV already exists, load it and return the data (so we can run further analyses)
         if self.make_csv and os.path.isfile(tracked_csv_path):
-            self.logger.info(f"CSV already exists for {video_path}. Skipping.")
-            return None, None
-        if self.make_video and os.path.isfile(tracked_video_path):
-            self.logger.info(f"Tracked Video already exists for {video_path}. Skipping.")
-            return None, None
+            self.logger.info(f"CSV already exists for {video_path}. Loading tracked data.")
+            import pandas as pd  # Import here if not already imported at the top
+            try:
+                # Attempt to load with two header rows to preserve the MultiIndex
+                marker_df = pd.read_csv(tracked_csv_path, header=[0,1])
+            except Exception as e:
+                self.logger.error(f"Error loading CSV with multi-index: {e}. Loading without multi-index.")
+                marker_df = pd.read_csv(tracked_csv_path)
+            metadata_path = tracked_csv_path.replace(".csv", "_metadata.json")
+            fs = 25  # default frame rate
+            if os.path.isfile(metadata_path):
+                with open(metadata_path, "r") as f:
+                    metadata = json.load(f)
+                fs = int(metadata.get("fps", 25))
+            return marker_df, fs
 
+        # Optionally, check tracked video existence, but the key is to load CSV if available.
+        if self.make_video and os.path.isfile(tracked_video_path):
+            self.logger.info(f"Tracked Video already exists for {video_path}. (Using CSV if available)")
+            # We don't return here since CSV check takes precedence.
+
+        # If tracked CSV does not exist, proceed with processing
         videogen = list(skvideo.io.vreader(video_path))
         metadata = skvideo.io.ffprobe(video_path)
         fs = int(metadata['video']['@r_frame_rate'].split('/')[0])
@@ -174,9 +190,9 @@ class PoseEstimator:
                     outputdict={
                         "-r": str(fs), 
                         "-vcodec": "libx264", 
-                        "-acodec": "aac",      # Adds audio stream for compatibility
-                        "-strict": "-2",       # Allows AAC even if experimental
-                        "-pix_fmt": "yuv420p"  # Ensures color compatibility
+                        "-acodec": "aac",      
+                        "-strict": "-2",       
+                        "-pix_fmt": "yuv420p"  
                     }
                 ) if self.make_video else None
 
@@ -252,13 +268,3 @@ class PoseEstimator:
         os.makedirs(video_dir, exist_ok=True)
         tracked_video_path = os.path.join(video_dir, f"{file_name}_MPtracked.mp4")
         return tracked_csv_path, tracked_video_path
-
-
-# if __name__ == "__main__":
-#     set_ffmpeg_path()
-#     config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../config.json"))
-#     config = load_config(config_path)
-#     pose_estimator = PoseEstimator(config=config)
-#     # Update the video input path as needed:
-#     video_input_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Input_videos/ghadir/IMG_2601.mp4"))
-#     pose_estimator.process_video(video_input_path)
