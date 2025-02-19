@@ -9,7 +9,6 @@
   },
   "event_detection": {
     "algorithm": "zeni",
-    "frame_rate": 30,
     "plots_dir": "output/plots"
   },
   "preprocessing": {
