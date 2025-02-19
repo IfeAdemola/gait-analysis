@@ -182,11 +182,14 @@ def compute_and_save_summary(gait_df, video_name, output_dir):
     Only columns that contain values will be included in the summary.
     The resulting CSV has an explicit 'statistic' column (with values "mean" and "median") and flattened headers.
     The video name is included as the first column in the CSV.
-
+    
     Args:
         gait_df (pd.DataFrame): DataFrame containing per-stride gait parameters.
         video_name (str): Identifier for the video, used in naming the output file.
         output_dir (str): Directory where the summary CSV should be saved.
+    
+    Returns:
+        pd.DataFrame: The summary statistics DataFrame.
     """
     # Compute summary statistics (mean and median for each column)
     summary_stats = gait_df.agg(['mean', 'median'])
@@ -206,9 +209,12 @@ def compute_and_save_summary(gait_df, video_name, output_dir):
     # Insert video name as the first column
     summary_stats.insert(0, 'video', video_name)
     
-    # Build the save path for the summary CSV.
+    # Build the save path for the individual summary CSV.
     summary_csv_path = os.path.join(output_dir, f"{video_name}_gait_summary.csv")
     
-    # Save using the existing helper function
+    # Save using the existing helper
     save_csv(summary_stats, summary_csv_path)
+    
+    # Return the summary DataFrame so it can be aggregated later.
+    return summary_stats
 

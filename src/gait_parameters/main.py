@@ -5,7 +5,7 @@ import pandas as pd
 import logging
 
 from gait_pipeline import GaitPipeline
-from utils.helpers import save_csv, compute_and_save_summary  # Import the summary function
+from utils.helpers import save_csv, compute_and_save_summary
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -76,10 +76,24 @@ def main():
         return
 
     logger.info("Found %d files to process in %s", len(input_files), data_dir)
+    
+    # List to store summary DataFrames for all videos
+    all_summaries = []
 
     # Process each file
     for input_file in input_files:
-        process_single_file(input_file, config["gait_parameters"]["save_path"], config)
+        summary_df = process_single_file(input_file, config["gait_parameters"]["save_path"], config)
+        if summary_df is not None:
+            all_summaries.append(summary_df)
+    
+    # After processing all videos, combine summaries and save master summary CSV.
+    if all_summaries:
+        master_summary = pd.concat(all_summaries, ignore_index=True)
+        master_summary_csv_path = os.path.join(config["gait_parameters"]["save_path"], "all_gait_summary.csv")
+        save_csv(master_summary, master_summary_csv_path)
+        logger.info("Master summary saved to %s", master_summary_csv_path)
+    else:
+        logger.info("No summaries were generated.")
 
 
 def get_save_gait_parameters_path(input_file, output_dir):
@@ -118,7 +132,8 @@ def get_save_gait_parameters_path(input_file, output_dir):
 
 def process_single_file(input_file, output_dir, config):
     """
-    Process a single file using GaitPipeline and save the resulting CSV.
+    Process a single file using GaitPipeline, save the resulting detailed CSV,
+    and compute & save the summary CSV. Returns the summary DataFrame.
     """
     save_parameters_path = get_save_gait_parameters_path(input_file, output_dir)
 
@@ -137,7 +152,7 @@ def process_single_file(input_file, output_dir, config):
     pose_data = pipeline.load_input()
     if pose_data is None:
         logger.info("Skipping %s due to loading issues.", input_file)
-        return
+        return None
 
     pipeline.preprocess()
     pipeline.detect_events()
@@ -147,9 +162,10 @@ def process_single_file(input_file, output_dir, config):
     save_csv(gait_parameters, save_parameters_path)
     logger.info("Processed %s, gait parameters saved to %s", input_file, save_parameters_path)
     
-    # Compute and save summary CSV with means and medians
+    # Compute and save summary CSV with means and medians; capture the returned DataFrame.
     video_name = os.path.splitext(os.path.basename(input_file))[0]
-    compute_and_save_summary(gait_parameters, video_name, config["gait_parameters"]["save_path"])
+    summary_df = compute_and_save_summary(gait_parameters, video_name, config["gait_parameters"]["save_path"])
+    return summary_df
 
 
 if __name__ == "__main__":
