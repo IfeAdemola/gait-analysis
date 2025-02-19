@@ -1,11 +1,23 @@
 import os
 import pandas as pd
 import numpy as np
-import csv
+import shutil
+import skvideo
 
 from scipy.signal import find_peaks
 from scipy.signal import hilbert, butter, lfilter, medfilt, filtfilt
 
+# --- Setting FFmpeg Path ---
+def set_ffmpeg_path():
+    try:
+        # Check if ffmpeg is available in the system PATH
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path:
+            print(f"FFmpeg is available. Path: {ffmpeg_path}")
+            skvideo.setFFmpegPath(os.path.dirname(ffmpeg_path))
+    except FileNotFoundError:
+        print("FFmpeg is not found on the system.")
+    return
 
 # --- File Handling Utilities ---
 def validate_file_exists(file_path):
