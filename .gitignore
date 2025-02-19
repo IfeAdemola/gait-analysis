@@ -16,6 +16,8 @@ __pycache__/
 # Ignore the tests folder and its contents
 tests/
 
+# 
+*.DS_store
 
 # Distribution / packaging
 .Python
