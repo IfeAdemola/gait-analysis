@@ -183,7 +183,8 @@ class PoseEstimator:
         # If tracked CSV does not exist, proceed with processing
         videogen = list(skvideo.io.vreader(video_path))
         metadata = skvideo.io.ffprobe(video_path)
-        fs = int(metadata['video']['@r_frame_rate'].split('/')[0])
+        num, denom = metadata['video']['@r_frame_rate'].split('/')
+        fs = float(num) / float(denom)
         self.logger.info(f"Video loaded. Frame rate: {fs} fps.")
         writer = skvideo.io.FFmpegWriter(
                     tracked_video_path, 
@@ -200,7 +201,7 @@ class PoseEstimator:
 
         for i, image in enumerate(tqdm(videogen, desc=f"Processing {os.path.basename(video_path)}", total=len(videogen))):
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
-            frame_ms = fs * i
+            frame_ms = int(fs * i)
 
             # Run MediaPipe models for hands and pose.
             results_hands = self.hands.detect_for_video(mp_image, frame_ms)
