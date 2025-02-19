@@ -1,5 +1,4 @@
 import numpy as np
-import skvideo
 import skvideo.io
 import mediapipe as mp
 from typing import Optional, Any, Tuple
@@ -219,7 +218,7 @@ class PoseEstimator:
             writer.close()
             self.logger.info(f"Saved annotated video to {tracked_video_path}")
 
-        return marker_df
+        return marker_df, fs
     
     def batch_video_processing(self, input_directory) -> Any:
         video_files = glob.glob(os.path.join(input_directory, "**", "*.mp4"), recursive=True)
