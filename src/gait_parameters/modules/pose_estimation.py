@@ -148,6 +148,8 @@ class PoseEstimator:
         return mp.tasks.vision.HandLandmarker.create_from_options(options)
     
     def process_video(self, video_path: str, tracked_csv_dir: Optional[str] = None, tracked_video_dir: Optional[str] = None) -> Optional[Any]:
+        set_ffmpeg_path()
+
         if tracked_csv_dir is None:
             tracked_csv_dir = self.tracked_csv_dir
         if tracked_video_dir is None:
@@ -158,16 +160,25 @@ class PoseEstimator:
         # Skip processing if output files already exist
         if self.make_csv and os.path.isfile(tracked_csv_path):
             self.logger.info(f"CSV already exists for {video_path}. Skipping.")
-            return
+            return None, None
         if self.make_video and os.path.isfile(tracked_video_path):
             self.logger.info(f"Tracked Video already exists for {video_path}. Skipping.")
-            return
+            return None, None
 
         videogen = list(skvideo.io.vreader(video_path))
         metadata = skvideo.io.ffprobe(video_path)
         fs = int(metadata['video']['@r_frame_rate'].split('/')[0])
         self.logger.info(f"Video loaded. Frame rate: {fs} fps.")
-        writer = skvideo.io.FFmpegWriter(tracked_video_path, outputdict={"-r": str(fs)}) if self.make_video else None
+        writer = skvideo.io.FFmpegWriter(
+                    tracked_video_path, 
+                    outputdict={
+                        "-r": str(fs), 
+                        "-vcodec": "libx264", 
+                        "-acodec": "aac",      # Adds audio stream for compatibility
+                        "-strict": "-2",       # Allows AAC even if experimental
+                        "-pix_fmt": "yuv420p"  # Ensures color compatibility
+                    }
+                ) if self.make_video else None
 
         marker_df, marker_mapping = prepare_empty_dataframe(hands='both', pose=True)
 
@@ -243,11 +254,11 @@ class PoseEstimator:
         return tracked_csv_path, tracked_video_path
 
 
-if __name__ == "__main__":
-    set_ffmpeg_path()
-    config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../config.json"))
-    config = load_config(config_path)
-    pose_estimator = PoseEstimator(config=config)
-    # Update the video input path as needed:
-    video_input_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Input_videos/ghadir/IMG_2601.mp4"))
-    pose_estimator.process_video(video_input_path)
+# if __name__ == "__main__":
+#     set_ffmpeg_path()
+#     config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../config.json"))
+#     config = load_config(config_path)
+#     pose_estimator = PoseEstimator(config=config)
+#     # Update the video input path as needed:
+#     video_input_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../Input_videos/ghadir/IMG_2601.mp4"))
+#     pose_estimator.process_video(video_input_path)
