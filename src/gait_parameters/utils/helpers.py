@@ -6,7 +6,7 @@ import shutil
 import skvideo
 
 from scipy.signal import find_peaks
-from scipy.signal import hilbert, butter, lfilter, medfilt, filtfilt
+from scipy.signal import  butter, lfilter, filtfilt
 
 # --- Set FFmpeg Path ---
 def set_ffmpeg_path():
@@ -20,7 +20,28 @@ def set_ffmpeg_path():
         print("FFmpeg is not found on the system.")
     return
 
-# --- Get Frame Rate ---
+# --- Get Video Frame Rate ---  
+def get_metadata_path(file_path):
+    """Get the metadata file path corresponding to the input CSV file
+
+    Args:
+        input_file (str): Path to the input CSV file of the tracked pose estimation
+
+    Returns:
+        str: Path to the metadata JSON file
+    """
+    # Get the file name without extension and directory
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    
+    # Construct the metadata file name
+    metadata_file = f"{base_name}_metadata.json"
+    
+    # Get the directory of the input file
+    directory = os.path.dirname(file_path)
+    
+    # Combine directory and metadata file name
+    return os.path.join(directory, metadata_file)
+
 def get_frame_rate(file_path):
     """Get the frame rate of a video from its corresponding metadata file
 
@@ -30,8 +51,10 @@ def get_frame_rate(file_path):
     Returns:
         int: frame rate of video file
     """
+    metadata_path = get_metadata_path(file_path)
+
     try:
-        with open(file_path, 'r') as file:
+        with open(metadata_path, 'r') as file:
             data = json.load(file)
             fps =  data.get('fps')
             return int(fps) if fps is not None else None
@@ -39,6 +62,7 @@ def get_frame_rate(file_path):
         print('Error reading or parsing file:', e)
         return None
     
+ 
 # --- File Handling Utilities ---
 def validate_file_exists(file_path):
     if not os.path.exists(file_path):
@@ -97,6 +121,7 @@ def detect_peaks(signal, threshold=0.5):
     peaks, _ = find_peaks(signal, height=threshold)
     return peaks
 
+
 # --- Filtering Utilities ---
 def butter_lowpass_filter(df, columns=None, cutoff=3, fs=30, order=4):
     """Apply a lowpass Butterworth filter to specified columns of a DataFrame."""
@@ -135,6 +160,7 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = lfilter(b, a, data)
     return y
+
 
 # --- Logging Utilities ---
 def log(message, level="INFO"):
