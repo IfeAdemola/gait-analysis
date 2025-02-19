@@ -1,18 +1,19 @@
 {
   "data_dir": "data",
+  "output_dir": "output",
   "gait_parameters": {
-    "save_path": "output/gait_parameters"
+    "save_path": "gait_parameters"
   },
   "pose_estimator": {
     "make_video": true,
     "make_csv": true,
-    "tracked_csv_dir": "output/tracked_csv",
-    "tracked_video_dir": "output/tracked_videos"
+    "tracked_csv_dir": "tracked_csv",
+    "tracked_video_dir": "tracked_videos"
   },
   "event_detection": {
     "algorithm": "zeni",
     "make_plot": true,
-    "plots_dir": "output/plots"
+    "plots_dir": "plots"
   },
   "preprocessing": {
     "median_filter_window": 31,

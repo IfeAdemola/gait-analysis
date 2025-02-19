@@ -24,24 +24,40 @@ def get_project_root():
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
+def get_external_folder(external_name, project_root, fallback_relative):
+    """
+    Check for an external folder (one level above the project) named external_name.
+    If found, return its absolute path; otherwise, return the fallback path,
+    which is relative to the project_root.
+    """
+    parent_dir = os.path.abspath(os.path.join(project_root, ".."))
+    external_path = os.path.join(parent_dir, external_name)
+    if os.path.isdir(external_path):
+        logger.info("Using external %s folder: %s", external_name, external_path)
+        return external_path
+    else:
+        fallback = os.path.join(project_root, fallback_relative)
+        logger.info("External %s folder not found. Using internal folder: %s", external_name, fallback)
+        return fallback
+
+
 def main():
     # Get the project root (two levels above main.py)
     project_root = get_project_root()
 
-    # Define absolute paths relative to project_root
-    data_dir = os.path.join(project_root, "data")
-    output_dir = os.path.join(project_root, "output")
-
-    # Load config.json (if you still want to keep other settings in it)
+    # Load config.json
     config_path = os.path.join(os.path.dirname(__file__), "config.json")
     config = load_config(config_path)
 
-    # Override folder paths in config with our absolute paths:
-    config["data_dir"] = data_dir
-    config["gait_parameters"]["save_path"] = os.path.join(output_dir, "gait_parameters")
-    config["pose_estimator"]["tracked_csv_dir"] = os.path.join(output_dir, "tracked_csv")
-    config["pose_estimator"]["tracked_video_dir"] = os.path.join(output_dir, "tracked_videos")
-    config["event_detection"]["plots_dir"] = os.path.join(output_dir, "plots")
+    # Resolve the data and output directories:
+    data_dir = get_external_folder("Data", project_root, config["data_dir"])
+    output_dir = get_external_folder("Output", project_root, config["output_dir"])
+
+    # Update paths for output subdirectories from config using the resolved output_dir
+    config["gait_parameters"]["save_path"] = os.path.join(output_dir, config["gait_parameters"]["save_path"])
+    config["pose_estimator"]["tracked_csv_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_csv_dir"])
+    config["pose_estimator"]["tracked_video_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_video_dir"])
+    config["event_detection"]["plots_dir"] = os.path.join(output_dir, config["event_detection"]["plots_dir"])
 
     # Ensure that the needed directories exist
     os.makedirs(data_dir, exist_ok=True)
@@ -120,8 +136,8 @@ def process_single_file(input_file, output_dir, config):
     # Run the pipeline
     pose_data = pipeline.load_input()
     if pose_data is None:
-        # TODO: Not necessarily an error. INFO logger
-        # logger.error("Skipping %s due to loading issues.", input_file)  
+        # Not necessarily an error—could be logged as info.
+        logger.info("Skipping %s due to loading issues.", input_file)
         return
 
     pipeline.preprocess()
