@@ -53,14 +53,17 @@ class EventDetector:
     Detects heel strike (HS) and toe-off (TO) events from pose data.
     """
     
-    def __init__(self, algorithm="zeni", make_plot=False, frame_rate=25, window_size=100, step_size=50, config=None, **kwargs):
+    def __init__(self, algorithm="zeni", make_plot=True, frame_rate=25, window_size=100, step_size=50, config=None, **kwargs):
+        project_root = get_project_root()
         self.algorithm = algorithm
         self.make_plot = make_plot
         self.frame_rate = frame_rate
         self.window_size = window_size
         self.step_size = step_size
         self.config = config or {}
-        self.plots_dir = get_plots_dir(self.config)
+        # self.plots_dir = get_plots_dir(self.config)
+        self.plots_dir = os.path.abspath(self.config.get("event_detection", {}).get("plots_dir", os.path.join(project_root, "output", "plots")))
+        
     
     def detect_heel_toe_events(self, pose_data):
         try:

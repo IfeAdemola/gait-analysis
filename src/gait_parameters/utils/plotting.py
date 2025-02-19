@@ -50,10 +50,9 @@ def plot_raw_pose(landmarks, frame_rate, output_dir="plots"):
     axes[1].grid()
     
     plt.tight_layout()
-    os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "raw_pose.png"))
-    
     # plt.show()
+    plt.close(fig)
 
 def plot_extremas(all_forward_movement, all_extrema_data, frame_rate, output_dir="plots"):
     """
@@ -90,11 +89,10 @@ def plot_extremas(all_forward_movement, all_extrema_data, frame_rate, output_dir
         ax.grid()
 
     plt.tight_layout()
-    
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "extremas.png"), dpi=300)
-    
     # plt.show()
+    plt.close(fig)
 
 def plot_extrema_frames(extremas_dict, output_dir, frames_dir):
     """Plot and save extrema frames dynamically from dictionary."""
@@ -134,6 +132,7 @@ def plot_extrema_frames(extremas_dict, output_dir, frames_dir):
             plt.tight_layout()
             plt.savefig(os.path.join(output_dir, f"{key}_{extrema_type}.png"), dpi=300)
             # plt.show()
+            plt.close(fig)
 
 def extract_frames(video_path, output_dir):
     """Extract all frames from a video and save them."""
