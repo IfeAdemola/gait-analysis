@@ -4,11 +4,14 @@
     "save_path": "output/gait_parameters"
   },
   "pose_estimator": {
+    "make_video": true,
+    "make_csv": true,
     "tracked_csv_dir": "output/tracked_csv",
     "tracked_video_dir": "output/tracked_videos"
   },
   "event_detection": {
     "algorithm": "zeni",
+    "make_plot": true,
     "plots_dir": "output/plots"
   },
   "preprocessing": {
