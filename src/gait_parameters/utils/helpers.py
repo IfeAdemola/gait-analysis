@@ -1,13 +1,14 @@
 import os
 import pandas as pd
 import numpy as np
+import json
 import shutil
 import skvideo
 
 from scipy.signal import find_peaks
 from scipy.signal import hilbert, butter, lfilter, medfilt, filtfilt
 
-# --- Setting FFmpeg Path ---
+# --- Set FFmpeg Path ---
 def set_ffmpeg_path():
     try:
         # Check if ffmpeg is available in the system PATH
@@ -19,6 +20,25 @@ def set_ffmpeg_path():
         print("FFmpeg is not found on the system.")
     return
 
+# --- Get Frame Rate ---
+def get_frame_rate(file_path):
+    """Get the frame rate of a video from its corresponding metadata file
+
+    Args:
+        file_path (str): .json file with "metadata" in file name
+
+    Returns:
+        int: frame rate of video file
+    """
+    try:
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+            fps =  data.get('fps')
+            return int(fps) if fps is not None else None
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print('Error reading or parsing file:', e)
+        return None
+    
 # --- File Handling Utilities ---
 def validate_file_exists(file_path):
     if not os.path.exists(file_path):
