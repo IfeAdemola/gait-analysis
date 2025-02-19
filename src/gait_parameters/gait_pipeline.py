@@ -5,7 +5,7 @@ from modules.preprocessing import Preprocessor
 from modules.event_detection import EventDetector
 from modules.parameters_computation import GaitParameters
 
-from utils.helpers import load_csv
+from utils.helpers import load_csv, get_frame_rate
 
 class GaitPipeline:
     def __init__(self, input_path, config, save_parameters_path):
@@ -13,6 +13,7 @@ class GaitPipeline:
         self.config = config
         self.save_parameters_path = save_parameters_path
         self.pose_data = None
+        self.frame_rate = None
         self.events = None
         self.gait_params = None
     
@@ -20,11 +21,12 @@ class GaitPipeline:
         if self.input_path.endswith(".csv"):
             # Load a CSV directly.
             self.pose_data = load_csv(file_path=self.input_path)
+            self.frame_rate = get_frame_rate(file_path=self.input_path) 
 
         elif self.input_path.endswith((".mp4", ".MP4", ".mov", ".MOV")):
             # Pass self.config so PoseEstimator uses the same folder settings.
             pose_estimator = PoseEstimator(config=self.config)
-            self.pose_data = pose_estimator.process_video(video_path=self.input_path)
+            self.pose_data, self.frame_rate = pose_estimator.process_video(video_path=self.input_path)
 
             # If PoseEstimator returned a DataFrame, ensure columns are numeric.
             if self.pose_data is not None:
@@ -47,7 +49,7 @@ class GaitPipeline:
 
     def detect_events(self):
         # Pass the event_detection settings via **kwargs
-        detector = EventDetector(**self.config['event_detection'])
+        detector = EventDetector(**self.config['event_detection'], frame_rate = self.frame_rate)
         self.events = detector.detect_heel_toe_events(self.pose_data)
         return self.events
 
