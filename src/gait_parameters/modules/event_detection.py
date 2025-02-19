@@ -6,7 +6,7 @@ import os
 import json
 
 from utils.helpers import detect_extremas
-from utils.plotting import plot_raw_pose, plot_extremas, plot_extrema_frames
+from utils.plotting import plot_raw_pose, plot_extremas, plot_extrema_frames, plot_combined_toe
 
 
 def get_project_root():
@@ -30,7 +30,7 @@ def get_plots_dir(config=None):
         if plots_dir:
             plots_dir = os.path.abspath(plots_dir)
         else:
-            plots_dir = os.path.join(get_project_root(), "output", "plots")
+            plots_dir = os.path.join(get_project_root(), "..", "..", "Output", "plots")
     else:
         plots_dir = os.path.join(get_project_root(), "output", "plots")
     os.makedirs(plots_dir, exist_ok=True)
@@ -84,6 +84,7 @@ class EventDetector:
             logger.exception("Error rotating pose data: %s", str(e))
             raise
 
+        # Uncomment the following block if you also want to see raw pose plots:
         # try:
         #     plot_raw_pose(rotated_pose_data, self.frame_rate, output_dir=self.plots_dir)
         # except Exception as e:
@@ -149,7 +150,12 @@ class EventDetector:
                 event_extrema_data[landmark_name] = np.array([])
 
         if self.make_plot:
+            # Plot the individual extremas
             plot_extremas(all_forward_movement, all_extrema_data, self.frame_rate, self.input_path, output_dir=self.plots_dir)
+            
+            # New: Call the combined toe plot if both toe markers are available.
+            if "TO_left" in all_forward_movement and "TO_right" in all_forward_movement:
+                plot_combined_toe(all_forward_movement, all_extrema_data, self.frame_rate, self.input_path, output_dir=self.plots_dir)
        
         try:
             max_length = max(len(v) for v in event_extrema_data.values() if isinstance(v, (list, np.ndarray)))
