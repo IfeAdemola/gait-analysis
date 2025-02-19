@@ -6,7 +6,7 @@ import shutil
 import skvideo
 
 from scipy.signal import find_peaks
-from scipy.signal import  butter, lfilter, filtfilt
+from scipy.signal import butter, lfilter, filtfilt
 
 # --- Set FFmpeg Path ---
 def set_ffmpeg_path():
@@ -92,14 +92,18 @@ def save_csv(data, file_path):
     Saves the provided data to a CSV file.
 
     Args:
-        data (dict): Dictionary containing the data to be saved.
+        data (dict or pd.DataFrame): Data to be saved.
         file_path (str): Path to the CSV file where the data will be saved.
     """
     # Ensure the directory for the file exists
     directory = os.path.dirname(file_path)
     os.makedirs(directory, exist_ok=True)
     
-    df = pd.DataFrame(data)
+    # If data is already a DataFrame, use it directly
+    if isinstance(data, pd.DataFrame):
+        df = data
+    else:
+        df = pd.DataFrame(data)
     df.to_csv(file_path, index=False)
 
 
@@ -170,3 +174,41 @@ def log(message, level="INFO"):
     :param level: str, log level (e.g., 'INFO', 'DEBUG', 'WARNING')
     """
     print(f"[{level}] {message}")
+
+
+def compute_and_save_summary(gait_df, video_name, output_dir):
+    """
+    Computes summary statistics (mean and median) for each column in the gait DataFrame and saves them as a CSV file.
+    Only columns that contain values will be included in the summary.
+    The resulting CSV has an explicit 'statistic' column (with values "mean" and "median") and flattened headers.
+    The video name is included as the first column in the CSV.
+
+    Args:
+        gait_df (pd.DataFrame): DataFrame containing per-stride gait parameters.
+        video_name (str): Identifier for the video, used in naming the output file.
+        output_dir (str): Directory where the summary CSV should be saved.
+    """
+    # Compute summary statistics (mean and median for each column)
+    summary_stats = gait_df.agg(['mean', 'median'])
+    
+    # Drop columns that are completely empty (both mean and median are NaN)
+    summary_stats = summary_stats.dropna(axis=1, how='all')
+    
+    # Flatten multi-index columns (e.g., ('left', 'step_length') becomes 'left_step_length')
+    summary_stats.columns = [
+        "{}_{}".format(col[0], col[1]) if isinstance(col, tuple) else col 
+        for col in summary_stats.columns
+    ]
+    
+    # Reset index to turn the row labels ("mean", "median") into a column and rename it "statistic"
+    summary_stats = summary_stats.reset_index().rename(columns={'index': 'statistic'})
+    
+    # Insert video name as the first column
+    summary_stats.insert(0, 'video', video_name)
+    
+    # Build the save path for the summary CSV.
+    summary_csv_path = os.path.join(output_dir, f"{video_name}_gait_summary.csv")
+    
+    # Save using the existing helper function
+    save_csv(summary_stats, summary_csv_path)
+

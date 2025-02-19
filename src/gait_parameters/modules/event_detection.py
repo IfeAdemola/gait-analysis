@@ -27,10 +27,8 @@ def get_plots_dir(config=None):
     """
     if config and "event_detection" in config:
         plots_dir = config["event_detection"].get("plots_dir")
-        if plots_dir:
-            plots_dir = os.path.abspath(plots_dir)
-        else:
-            plots_dir = os.path.join(get_project_root(), "..", "..", "Output", "plots")
+        if not plots_dir:
+            plots_dir = os.path.join(get_project_root(), "output", "plots")
     else:
         plots_dir = os.path.join(get_project_root(), "output", "plots")
     os.makedirs(plots_dir, exist_ok=True)
@@ -62,8 +60,9 @@ class EventDetector:
         self.window_size = window_size
         self.step_size = step_size
         self.config = config or {}
-        # self.plots_dir = get_plots_dir(self.config)
-        self.plots_dir = os.path.abspath(self.config.get("event_detection", {}).get("plots_dir", os.path.join(project_root, "output", "plots")))
+        # Instead of converting to absolute path here, use the value from the config directly.
+        self.plots_dir = self.config.get("event_detection", {}).get("plots_dir", os.path.join(project_root, "output", "plots"))
+        os.makedirs(self.plots_dir, exist_ok=True)
         
     
     def detect_heel_toe_events(self, pose_data):

@@ -46,25 +46,27 @@ class GaitParameters:
         for side in ['left', 'right']:
             other_side = 'left' if side == 'right' else 'right'
 
-            # Compute parameters
+            # Compute required intermediate parameters:
             gait_df[(side, 'stride_duration')] = events[f'HS_{side}'].shift(-1) - events[f'HS_{side}']
             gait_df[(side, 'step_duration')] = events[f'HS_{side}'].shift(-1) - events[f'HS_{other_side}']
-            gait_df[(side, 'cadence')] = 60 / gait_df[(side, 'step_duration')].replace(0, np.nan)
-            gait_df[(side, 'initial_double_support')] = events[f'TO_{other_side}'] - events[f'HS_{side}']
-            gait_df[(side, 'terminal_double_support')] = events[f'TO_{side}'] - events[f'HS_{side}'].shift(-1)
-            gait_df[(side, 'single_limb_support')] = events[f'HS_{other_side}'] - events[f'TO_{side}']
-            gait_df[(side, 'stance')] = events[f'TO_{side}'] - events[f'HS_{side}']
-            gait_df[(side, 'swing')] = events[f'HS_{side}'].shift(-1) - events[f'TO_{side}']
 
-            # Compute step and stride lengths
+            # Top 5 parameters:
+            gait_df[(side, 'cadence')] = 60 / gait_df[(side, 'step_duration')].replace(0, np.nan)
             gait_df[(side, 'step_length')] = GaitParameters.compute_step_length(events, side, other_side)
             gait_df[(side, 'stride_length')] = gait_df[(side, 'step_length')].shift(-1) + gait_df[(side, 'step_length')]
             gait_df[(side, 'gait_speed')] = gait_df[(side, 'stride_length')] / gait_df[(side, 'stride_duration')]
+            gait_df[(side, 'swing')] = events[f'HS_{side}'].shift(-1) - events[f'TO_{side}']
+            gait_df[(side, 'initial_double_support')] = events[f'TO_{other_side}'] - events[f'HS_{side}']
 
-        # Asymmetry calculations
-        for feature in ['stride_duration', 'step_duration', 'stance', 'swing',
-                        'terminal_double_support', 'initial_double_support', 
-                        'double_support', 'single_limb_support']:
+            # --- Other parameters computed but commented out for PD analysis ---
+            # gait_df[(side, 'terminal_double_support')] = events[f'TO_{side}'] - events[f'HS_{side}'].shift(-1)
+            # gait_df[(side, 'single_limb_support')] = events[f'HS_{other_side}'] - events[f'TO_{side}']
+            # gait_df[(side, 'stance')] = events[f'TO_{side}'] - events[f'HS_{side}']
+
+        # --- Asymmetry Calculations ---
+        # For PD analysis, asymmetry in gait can be informative.
+        # Here, we compute asymmetry for the selected top features.
+        for feature in ['stride_duration', 'cadence', 'swing', 'initial_double_support']:
             gait_df[('asymmetry', feature)] = (
                 abs(gait_df[('left', feature)] - gait_df[('right', feature)])
                 / gait_df[[('left', feature), ('right', feature)]].max(axis=1) * 100

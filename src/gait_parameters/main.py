@@ -5,7 +5,7 @@ import pandas as pd
 import logging
 
 from gait_pipeline import GaitPipeline
-from utils.helpers import save_csv
+from utils.helpers import save_csv, compute_and_save_summary  # Import the summary function
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -136,7 +136,6 @@ def process_single_file(input_file, output_dir, config):
     # Run the pipeline
     pose_data = pipeline.load_input()
     if pose_data is None:
-        # Not necessarily an error—could be logged as info.
         logger.info("Skipping %s due to loading issues.", input_file)
         return
 
@@ -144,9 +143,13 @@ def process_single_file(input_file, output_dir, config):
     pipeline.detect_events()
     gait_parameters = pipeline.compute_gait_parameters()
 
-    # Save computed gait parameters
+    # Save computed gait parameters (detailed CSV)
     save_csv(gait_parameters, save_parameters_path)
     logger.info("Processed %s, gait parameters saved to %s", input_file, save_parameters_path)
+    
+    # Compute and save summary CSV with means and medians
+    video_name = os.path.splitext(os.path.basename(input_file))[0]
+    compute_and_save_summary(gait_parameters, video_name, config["gait_parameters"]["save_path"])
 
 
 if __name__ == "__main__":
