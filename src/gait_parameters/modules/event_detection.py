@@ -53,7 +53,8 @@ class EventDetector:
     Detects heel strike (HS) and toe-off (TO) events from pose data.
     """
     
-    def __init__(self, algorithm="zeni", make_plot=True, frame_rate=25, window_size=100, step_size=50, config=None, **kwargs):
+    def __init__(self, input_path, algorithm="zeni", make_plot=True, frame_rate=25, window_size=100, step_size=50, config=None, **kwargs):
+        self.input_path = input_path 
         project_root = get_project_root()
         self.algorithm = algorithm
         self.make_plot = make_plot
@@ -148,7 +149,7 @@ class EventDetector:
                 event_extrema_data[landmark_name] = np.array([])
 
         if self.make_plot:
-            plot_extremas(all_forward_movement, all_extrema_data, self.frame_rate, output_dir=self.plots_dir)
+            plot_extremas(all_forward_movement, all_extrema_data, self.frame_rate, self.input_path, output_dir=self.plots_dir)
        
         try:
             max_length = max(len(v) for v in event_extrema_data.values() if isinstance(v, (list, np.ndarray)))

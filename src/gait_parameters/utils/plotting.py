@@ -54,7 +54,7 @@ def plot_raw_pose(landmarks, frame_rate, output_dir="plots"):
     # plt.show()
     plt.close(fig)
 
-def plot_extremas(all_forward_movement, all_extrema_data, frame_rate, output_dir="plots"):
+def plot_extremas(all_forward_movement, all_extrema_data, frame_rate, input_path, output_dir="plots"):
     """
     Plots filtered heel and toe signals with detected peaks and valleys.
     
@@ -88,9 +88,11 @@ def plot_extremas(all_forward_movement, all_extrema_data, frame_rate, output_dir
         ax.legend()
         ax.grid()
 
+    filename = os.path.basename(input_path).split('.')[0]
+
     plt.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, "extremas.png"), dpi=300)
+    plt.savefig(os.path.join(output_dir, f"{filename}_extremas.png"), dpi=300)
     # plt.show()
     plt.close(fig)
 

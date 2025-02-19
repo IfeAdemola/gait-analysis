@@ -49,7 +49,7 @@ class GaitPipeline:
 
     def detect_events(self):
         # Pass the event_detection settings via **kwargs
-        detector = EventDetector(**self.config['event_detection'], frame_rate = self.frame_rate)
+        detector = EventDetector(**self.config['event_detection'], input_path= self.input_path, frame_rate = self.frame_rate)
         self.events = detector.detect_heel_toe_events(self.pose_data)
         return self.events
 
