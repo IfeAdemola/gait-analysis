@@ -5,11 +5,14 @@ import pandas as pd
 import logging
 
 from gait_pipeline import GaitPipeline
-from utils.helpers import save_csv, compute_and_save_summary
+from my_utils.helpers import save_csv, compute_and_save_summary
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 def load_config(config_path):
@@ -132,23 +135,42 @@ def get_save_gait_parameters_path(input_file, output_dir):
 
 def process_single_file(input_file, output_dir, config):
     """
-    Process a single file using GaitPipeline, save the resulting detailed CSV,
-    and compute & save the summary CSV. Returns the summary DataFrame.
+    Process a single file using the GaitPipeline. If the file is a video,
+    first run the YOLO cropper to isolate the subject and capture the cropped
+    dimensions, then process the cropped video.
     """
+    # If the input file is a video, crop it first.
+    if input_file.endswith((".mp4", ".MP4", ".mov", ".MOV")):
+        from modules.yolo_cropper import YOLOCropper
+        cropper = YOLOCropper(confidence_threshold=config.get("yolo_confidence_threshold", 0.5))
+        # Generate a new file path for the cropped video.
+        base, ext = os.path.splitext(input_file)
+        cropped_video_path = f"{base}_cropped{ext}"
+        # Crop the video and capture the output path and cropped frame dimensions.
+        input_file, cropped_size = cropper.crop_video(
+            input_video_path=input_file,
+            output_video_path=cropped_video_path
+        )
+        # Optionally update your configuration to include these image dimensions
+        # so that your pose estimator can use them for accurate landmark projection.
+        config['pose_estimator']['image_dimensions'] = cropped_size
+
+    # Generate the file path to save gait parameters.
     save_parameters_path = get_save_gait_parameters_path(input_file, output_dir)
 
-    # Extra safeguard: remove directory if it still exists at save_parameters_path
+    # Extra safeguard: if the save path exists as a directory, remove it.
     if os.path.exists(save_parameters_path) and os.path.isdir(save_parameters_path):
         logger.warning("Final save path %s is still a directory. Removing it.", save_parameters_path)
         os.rmdir(save_parameters_path)
 
+    # Initialize the gait pipeline.
     pipeline = GaitPipeline(
         input_path=input_file,
         config=config,
         save_parameters_path=save_parameters_path
     )
 
-    # Run the pipeline
+    # Run the pipeline.
     pose_data = pipeline.load_input()
     if pose_data is None:
         logger.info("Skipping %s due to loading issues.", input_file)
@@ -158,15 +180,14 @@ def process_single_file(input_file, output_dir, config):
     pipeline.detect_events()
     gait_parameters = pipeline.compute_gait_parameters()
 
-    # Save computed gait parameters (detailed CSV)
+    # Save the detailed CSV of computed gait parameters.
     save_csv(gait_parameters, save_parameters_path)
     logger.info("Processed %s, gait parameters saved to %s", input_file, save_parameters_path)
     
-    # Compute and save summary CSV with means and medians; capture the returned DataFrame.
+    # Compute and save a summary CSV, then return the summary DataFrame.
     video_name = os.path.splitext(os.path.basename(input_file))[0]
     summary_df = compute_and_save_summary(gait_parameters, video_name, config["gait_parameters"]["save_path"])
     return summary_df
-
 
 if __name__ == "__main__":
     main()

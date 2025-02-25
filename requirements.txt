@@ -7,3 +7,5 @@ scipy
 tqdm
 scikit-video
 scikit-learn
+torch>=1.8.0
+torchvision

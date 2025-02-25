@@ -12,8 +12,8 @@ from tqdm import tqdm
 from mediapipe.framework.formats import landmark_pb2
 from mediapipe import solutions
 
-from utils.mediapipe_landmarks import prepare_empty_dataframe
-from utils.helpers import set_ffmpeg_path
+from my_utils.mediapipe_landmarks import prepare_empty_dataframe
+from my_utils.helpers import set_ffmpeg_path
 
 
 def load_config(config_path):

@@ -5,7 +5,7 @@ from modules.preprocessing import Preprocessor
 from modules.event_detection import EventDetector
 from modules.parameters_computation import GaitParameters
 
-from utils.helpers import load_csv, get_frame_rate
+from my_utils.helpers import load_csv, get_frame_rate
 
 class GaitPipeline:
     def __init__(self, input_path, config, save_parameters_path):

@@ -5,8 +5,8 @@ from sklearn.decomposition import PCA
 import os
 import json
 
-from utils.helpers import detect_extremas
-from utils.plotting import plot_raw_pose, plot_extremas, plot_extrema_frames, plot_combined_toe
+from my_utils.helpers import detect_extremas
+from my_utils.plotting import plot_raw_pose, plot_extremas, plot_extrema_frames, plot_combined_toe
 
 
 def get_project_root():
