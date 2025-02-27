@@ -5,7 +5,7 @@ import pandas as pd
 import logging
 
 from gait_pipeline import GaitPipeline
-from my_utils.helpers import save_csv, compute_and_save_summary
+from my_utils.helpers import save_csv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -57,6 +57,7 @@ def main():
     output_dir = get_external_folder("Output", project_root, config["output_dir"])
 
     # Update paths for output subdirectories from config using the resolved output_dir
+    # (Note: individual CSVs will no longer be saved.)
     config["gait_parameters"]["save_path"] = os.path.join(output_dir, config["gait_parameters"]["save_path"])
     config["pose_estimator"]["tracked_csv_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_csv_dir"])
     config["pose_estimator"]["tracked_video_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_video_dir"])
@@ -80,7 +81,7 @@ def main():
 
     logger.info("Found %d files to process in %s", len(input_files), data_dir)
     
-    # List to store summary DataFrames for all videos
+    # List to store summary DataFrames (with medians only) for all videos
     all_summaries = []
 
     # Process each file
@@ -89,12 +90,12 @@ def main():
         if summary_df is not None:
             all_summaries.append(summary_df)
     
-    # After processing all videos, combine summaries and save master summary CSV.
+    # After processing all files, combine summaries and save master summary CSV.
     if all_summaries:
         master_summary = pd.concat(all_summaries, ignore_index=True)
         master_summary_csv_path = os.path.join(config["gait_parameters"]["save_path"], "all_gait_summary.csv")
         save_csv(master_summary, master_summary_csv_path)
-        logger.info("Master summary saved to %s", master_summary_csv_path)
+        logger.info("Master summary (medians only) saved to %s", master_summary_csv_path)
     else:
         logger.info("No summaries were generated.")
 
@@ -102,6 +103,7 @@ def main():
 def get_save_gait_parameters_path(input_file, output_dir):
     """
     Generate a valid file path for saving the gait parameters CSV file.
+    (This function is no longer used since we are not saving individual CSV files.)
     """
     file_name = os.path.splitext(os.path.basename(input_file))[0]
     if not os.path.exists(output_dir):
@@ -109,8 +111,6 @@ def get_save_gait_parameters_path(input_file, output_dir):
         logger.info("Created output directory: %s", output_dir)
 
     output_path = os.path.join(output_dir, f"{file_name}_gait_parameters.csv")
-
-    # If the output path exists and is a directory, handle the conflict.
     if os.path.exists(output_path) and os.path.isdir(output_path):
         logger.warning("Output path %s is a directory, expected a file path.", output_path)
         try:
@@ -135,39 +135,29 @@ def get_save_gait_parameters_path(input_file, output_dir):
 
 def process_single_file(input_file, output_dir, config):
     """
-    Process a single file using the GaitPipeline. If the file is a video,
-    first run the YOLO cropper to isolate the subject and capture the cropped
-    dimensions, then process the cropped video.
+    Process a single file using the GaitPipeline.
+    This version no longer saves an individual detailed CSV file,
+    and computes a summary containing only the median values.
     """
     # If the input file is a video, crop it first.
     if input_file.endswith((".mp4", ".MP4", ".mov", ".MOV")):
         from modules.yolo_cropper import YOLOCropper
         cropper = YOLOCropper(confidence_threshold=config.get("yolo_confidence_threshold", 0.5))
-        # Generate a new file path for the cropped video.
         base, ext = os.path.splitext(input_file)
         cropped_video_path = f"{base}_cropped{ext}"
-        # Crop the video and capture the output path and cropped frame dimensions.
         input_file, cropped_size = cropper.crop_video(
             input_video_path=input_file,
             output_video_path=cropped_video_path
         )
-        # Optionally update your configuration to include these image dimensions
-        # so that your pose estimator can use them for accurate landmark projection.
+        # Update the configuration with cropped dimensions for accurate pose estimation.
         config['pose_estimator']['image_dimensions'] = cropped_size
 
-    # Generate the file path to save gait parameters.
-    save_parameters_path = get_save_gait_parameters_path(input_file, output_dir)
-
-    # Extra safeguard: if the save path exists as a directory, remove it.
-    if os.path.exists(save_parameters_path) and os.path.isdir(save_parameters_path):
-        logger.warning("Final save path %s is still a directory. Removing it.", save_parameters_path)
-        os.rmdir(save_parameters_path)
-
     # Initialize the gait pipeline.
+    # Since we no longer save individual CSVs, we can pass None (or simply ignore this parameter).
     pipeline = GaitPipeline(
         input_path=input_file,
         config=config,
-        save_parameters_path=save_parameters_path
+        save_parameters_path=None
     )
 
     # Run the pipeline.
@@ -180,14 +170,17 @@ def process_single_file(input_file, output_dir, config):
     pipeline.detect_events()
     gait_parameters = pipeline.compute_gait_parameters()
 
-    # Save the detailed CSV of computed gait parameters.
-    save_csv(gait_parameters, save_parameters_path)
-    logger.info("Processed %s, gait parameters saved to %s", input_file, save_parameters_path)
-    
-    # Compute and save a summary CSV, then return the summary DataFrame.
+    # Do NOT save the individual gait parameters CSV file.
+    # Instead, compute a summary containing only the median values.
     video_name = os.path.splitext(os.path.basename(input_file))[0]
-    summary_df = compute_and_save_summary(gait_parameters, video_name, config["gait_parameters"]["save_path"])
+    median_summary = gait_parameters.median(numeric_only=True)
+    median_summary["video_name"] = video_name
+    # Convert the summary Series into a DataFrame with a single row.
+    summary_df = pd.DataFrame(median_summary).T
+
+    logger.info("Processed %s; median gait parameters computed.", input_file)
     return summary_df
+
 
 if __name__ == "__main__":
     main()
