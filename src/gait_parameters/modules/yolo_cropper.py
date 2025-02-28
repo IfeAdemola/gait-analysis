@@ -2,13 +2,29 @@ import cv2
 import torch
 import os
 
+def compute_iou(boxA, boxB):
+    """
+    Computes the Intersection over Union (IoU) of two bounding boxes.
+    Each box is a tuple in the format (x1, y1, x2, y2).
+    """
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+    return iou
+
 class YOLOCropper:
     def __init__(self, model_name="yolov5s", confidence_threshold=0.5):
         # Load the pre-trained YOLOv5 model from Ultralytics via torch.hub
         self.model = torch.hub.load('ultralytics/yolov5', model_name, pretrained=True)
         self.confidence_threshold = confidence_threshold
-        # This variable will store the user-selected person index (0-indexed) once chosen.
-        self.selected_person_index = None
+        self.selected_person_index = None  # user-selected person index (0-indexed)
+        self.last_selected_box = None      # last known bounding box
+        self.smoothed_box = None           # smoothed bounding box over frames
 
     def detect_persons(self, frame):
         """
@@ -17,6 +33,7 @@ class YOLOCropper:
         """
         results = self.model(frame)
         detections = results.xyxy[0].cpu().numpy()
+        # Class 0 corresponds to 'person'
         person_detections = [det for det in detections if int(det[5]) == 0 and det[4] >= self.confidence_threshold]
         boxes = []
         for det in person_detections:
@@ -53,23 +70,14 @@ class YOLOCropper:
             print("Error in selection. Defaulting to first detected person.")
             return 0
 
-
-    def crop_video(self, input_video_path, output_video_path, margin=50, max_fail_frames=20, smoothing_factor=0.9):
+    def crop_video(self, input_video_path, output_video_path, margin=80, max_fail_frames=20, smoothing_factor=0.9):
         """
-        Process the input video frame by frame. For each frame, detect persons.
-        - If no person is detected, the full frame is used (or the last known box).
-        - If one person is detected, that bounding box is used.
-        - If multiple persons are detected:
-             * Prompt for selection (if not already done) and use the chosen box.
-        Additionally, if the intended person is not detected for more than max_fail_frames consecutive frames,
-        the processing stops and the video is cut at that timestamp.
-        
-        The selected bounding box is expanded by the given margin, then smoothed temporally using an
-        exponential moving average with smoothing_factor, and used to crop the frame.
-        
-        Returns:
-            output_video_path (str): Path to the saved cropped video.
-            cropped_frame_size (tuple): (width, height) of the cropped frames.
+        Process the input video frame by frame. For each frame, detect persons and select the bounding box:
+         - No detection: Use the last known box or the full frame if none exists.
+         - Single detection: Use that box.
+         - Multiple detections: Use IoU matching against the last known box if possible; otherwise, prompt the user.
+        Applies temporal smoothing using an exponential moving average, expands the box by a margin,
+        crops the frame, and writes the result to an output video file.
         """
         cap = cv2.VideoCapture(input_video_path)
         if not cap.isOpened():
@@ -82,8 +90,6 @@ class YOLOCropper:
         out_writer = None
         cropped_frame_size = None
     
-        self.last_selected_box = None  # last known detection
-        self.smoothed_box = None       # smoothed bounding box
         consecutive_fail_count = 0
     
         while True:
@@ -95,32 +101,44 @@ class YOLOCropper:
             selected_box = None
     
             if not boxes:
-                # No detection; if we have a last known box, use it.
+                # No detection; use the last known box if available.
                 if self.last_selected_box is not None:
                     selected_box = self.last_selected_box
                 else:
                     selected_box = (0, 0, orig_width, orig_height)
                 consecutive_fail_count += 1
             elif len(boxes) == 1:
+                # Only one person detected.
                 selected_box = boxes[0]
-                self.last_selected_box = selected_box
                 consecutive_fail_count = 0
             else:
-                # Multiple detections.
-                if self.selected_person_index is None:
-                    self.selected_person_index = self.prompt_user_for_selection(frame, boxes)
-                if self.selected_person_index < len(boxes):
-                    selected_box = boxes[self.selected_person_index]
-                    self.last_selected_box = selected_box
-                    consecutive_fail_count = 0
-                else:
-                    if self.last_selected_box is not None:
-                        selected_box = self.last_selected_box
+                # Multiple detections available.
+                if self.last_selected_box is not None:
+                    best_iou = 0
+                    best_box = None
+                    best_idx = -1
+                    for idx, box in enumerate(boxes):
+                        iou = compute_iou(self.last_selected_box, box)
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_box = box
+                            best_idx = idx
+                    # Use the box with the highest IoU if it meets a minimum threshold.
+                    if best_iou > 0.3:
+                        selected_box = best_box
+                        self.selected_person_index = best_idx
+                        consecutive_fail_count = 0
                     else:
-                        selected_box = boxes[0]
-                        self.last_selected_box = selected_box
-                    consecutive_fail_count += 1
+                        self.selected_person_index = self.prompt_user_for_selection(frame, boxes)
+                        selected_box = boxes[self.selected_person_index]
+                        consecutive_fail_count = 0
+                else:
+                    # No previous box available to compare with.
+                    self.selected_person_index = self.prompt_user_for_selection(frame, boxes)
+                    selected_box = boxes[self.selected_person_index]
+                    consecutive_fail_count = 0
     
+            # Stop processing if detection fails consecutively for too many frames.
             if consecutive_fail_count >= max_fail_frames:
                 print(f"Person not detected for {max_fail_frames} consecutive frames. Cutting video here.")
                 break
@@ -142,6 +160,7 @@ class YOLOCropper:
             y2 = min(y2 + margin, orig_height)
             cropped_frame = frame[y1:y2, x1:x2]
     
+            # Initialize the VideoWriter if not done yet.
             if out_writer is None:
                 cropped_frame_size = (cropped_frame.shape[1], cropped_frame.shape[0])
                 out_writer = cv2.VideoWriter(output_video_path, fourcc, fps, cropped_frame_size)
@@ -149,6 +168,9 @@ class YOLOCropper:
                 if (cropped_frame.shape[1], cropped_frame.shape[0]) != cropped_frame_size:
                     cropped_frame = cv2.resize(cropped_frame, cropped_frame_size)
             out_writer.write(cropped_frame)
+    
+            # Update the last selected box for the next frame.
+            self.last_selected_box = selected_box
     
         cap.release()
         if out_writer:
