@@ -3,6 +3,7 @@ import glob
 import json
 import pandas as pd
 import logging
+import warnings
 
 from gait_pipeline import GaitPipeline
 from my_utils.helpers import save_csv
@@ -11,7 +12,6 @@ from my_utils.helpers import save_csv
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 
@@ -93,14 +93,17 @@ def main():
 
     logger.info("Found %d files to process in %s", len(input_files), data_dir)
     
-    # List to store summary DataFrames (with medians only) for all videos
+    # Lists to store summary DataFrames and skipped file names
     all_summaries = []
+    skipped_files = []
 
     # Process each file
     for input_file in input_files:
-        summary_df = process_single_file(input_file, config["gait_parameters"]["save_path"], config)
+        summary_df, skipped_file = process_single_file(input_file, config["gait_parameters"]["save_path"], config)
         if summary_df is not None:
             all_summaries.append(summary_df)
+        elif skipped_file is not None:
+            skipped_files.append(skipped_file)
     
     # After processing all files, combine summaries and save master summary CSV.
     if all_summaries:
@@ -111,31 +114,56 @@ def main():
     else:
         logger.info("No summaries were generated.")
 
+    if skipped_files:
+        logger.info("The following files were skipped:")
+        for f in skipped_files:
+            logger.info("  %s", f)
+
 
 def process_single_file(input_file, output_dir, config):
     """
     Process a single file using the GaitPipeline.
-    We will crop videos if they don't have '_cropped' in their name,
-    then run the pipeline on the cropped file. For CSV, just run the pipeline.
+    For video files, crop if necessary, then run the pipeline.
+    
+    Returns a tuple: (summary_df, skipped_file)
+      - summary_df is the DataFrame with computed gait parameters (or None if skipped).
+      - skipped_file is the new filename if the file was skipped, or None otherwise.
     """
+    skipped_file = None
+
     # If the file is a video (and we already confirmed '_cropped' is not in the name):
     if input_file.lower().endswith((".mp4", ".mov")):
         from modules.yolo_cropper import YOLOCropper
         cropper = YOLOCropper(confidence_threshold=config.get("yolo_confidence_threshold", 0.5))
-
-        # Create the cropped filename
+        
+        # Create the expected cropped filename
         base, ext = os.path.splitext(input_file)
         cropped_video_path = f"{base}_cropped{ext}"
 
-        # Crop the video
-        cropped_file, cropped_size = cropper.crop_video(
-            input_video_path=input_file,
-            output_video_path=cropped_video_path
-        )
-        # Now run the pipeline on the cropped file
-        input_file = cropped_file
-        # Update the configuration with the cropped dimensions for accurate pose estimation.
-        config['pose_estimator']['image_dimensions'] = cropped_size
+        # Check if a cropped version already exists
+        if os.path.exists(cropped_video_path):
+            logger.info("Cropped video already exists: %s. Skipping cropping step.", cropped_video_path)
+            # Use the existing cropped video
+            input_file = cropped_video_path
+
+            # Retrieve video dimensions from the existing cropped file.
+            import cv2
+            cap = cv2.VideoCapture(cropped_video_path)
+            ret, frame = cap.read()
+            if ret:
+                cropped_size = (frame.shape[1], frame.shape[0])  # (width, height)
+                config['pose_estimator']['image_dimensions'] = cropped_size
+            else:
+                logger.warning("Could not read video frame to get dimensions for %s", cropped_video_path)
+            cap.release()
+        else:
+            # Crop the video if no cropped version exists.
+            cropped_file, cropped_size = cropper.crop_video(
+                input_video_path=input_file,
+                output_video_path=cropped_video_path
+            )
+            input_file = cropped_file
+            config['pose_estimator']['image_dimensions'] = cropped_size
 
     # Initialize the gait pipeline (we run it on the CSV or the newly cropped file)
     pipeline = GaitPipeline(
@@ -144,18 +172,75 @@ def process_single_file(input_file, output_dir, config):
         save_parameters_path=None
     )
 
-    # Run the pipeline steps
     pose_data = pipeline.load_input()
     print(pose_data.columns)
     if pose_data is None:
         logger.info("Skipping %s due to loading issues.", input_file)
-        return None
+        return None, input_file
 
     pipeline.preprocess()
     pipeline.detect_events()
-    gait_parameters = pipeline.compute_gait_parameters()
 
-    # Detect Freezing of Gait events and compute summary metrics.
+    # --- Visualization Integration ---
+    # If "visualize" is set in the config, generate and prompt the combined figure.
+    if config.get("visualize", False):
+        from my_utils.plotting import butter_lowpass_filter, detect_extremas, plot_combined_extremas_and_toe
+        from my_utils.prompt_visualisation import prompt_visualisation
+        import matplotlib.pyplot as plt
+
+        # Compute forward displacement for toe markers.
+        toe_left_signal = pose_data[("left_foot_index", "z")] - pose_data[("sacrum", "z")]
+        toe_right_signal = pose_data[("right_foot_index", "z")] - pose_data[("sacrum", "z")]
+        
+        all_forward_movement = {
+            "TO_left": toe_left_signal.to_numpy(),
+            "TO_right": toe_right_signal.to_numpy()
+        }
+        
+        # Apply a low-pass filter.
+        fs = pipeline.frame_rate
+        filtered_left = butter_lowpass_filter(all_forward_movement["TO_left"], cutoff=3, fs=fs)
+        filtered_right = butter_lowpass_filter(all_forward_movement["TO_right"], cutoff=3, fs=fs)
+        all_forward_movement["TO_left"] = filtered_left
+        all_forward_movement["TO_right"] = filtered_right
+        
+        # Detect peaks and valleys.
+        peaks_left, valleys_left = detect_extremas(filtered_left)
+        peaks_right, valleys_right = detect_extremas(filtered_right)
+        all_extrema_data = {
+            "TO_left": {"peaks": peaks_left / fs, "valleys": valleys_left / fs},
+            "TO_right": {"peaks": peaks_right / fs, "valleys": valleys_right / fs}
+        }
+        
+        # Check if the forward displacement signals show any variation.
+        if (toe_left_signal.empty or toe_right_signal.empty or 
+            (toe_left_signal.nunique() <= 1 and toe_right_signal.nunique() <= 1)):
+            logger.warning("Forward displacement signals are empty or constant. Skipping visualization.")
+        else:
+            # Generate the combined figure.
+            # Here we use show_plot=True to ensure drawing happens, then capture the figure.
+            plot_combined_extremas_and_toe(
+                all_forward_movement,
+                all_extrema_data,
+                fs,
+                input_file,
+                output_dir=None,
+                show_plot=True
+            )
+            fig = plt.gcf()
+            
+            # Use the prompt_visualisation helper.
+            approved, new_file = prompt_visualisation(fig, input_file, config["event_detection"]["plots_dir"])
+            if not approved:
+                # If not approved, skip this file.
+                return None, new_file
+            # Close the figure after processing.
+            plt.close(fig)
+        
+    # --- End Visualization Integration ---
+
+    # Continue with processing if visual checks passed.
+    gait_parameters = pipeline.compute_gait_parameters()
     fog_events = pipeline.detect_freezes()
     if fog_events:
         fog_count = len(fog_events)
@@ -164,31 +249,21 @@ def process_single_file(input_file, output_dir, config):
         fog_count = 0
         fog_total_duration = 0.0
 
-    # Compute a summary containing only the median values for gait parameters
     median_summary = gait_parameters.median(numeric_only=True)
-
-    # Flatten the MultiIndex if present
     if isinstance(median_summary.index, pd.MultiIndex):
         median_summary.index = ['_'.join(map(str, tup)).strip() for tup in median_summary.index.values]
-
-    # Convert the summary Series into a DataFrame with a single row
     summary_df = pd.DataFrame(median_summary).T
 
-    # Add the video_name column
     video_name = os.path.splitext(os.path.basename(input_file))[0]
     summary_df['video_name'] = video_name
-
-    # Add FoG summary columns to the summary DataFrame
     summary_df['fog_count'] = fog_count
     summary_df['fog_total_duration_sec'] = fog_total_duration
 
-    # Reorder columns so that video_name is first
     columns = ['video_name'] + [col for col in summary_df.columns if col != 'video_name']
     summary_df = summary_df[columns]
 
     logger.info("Processed %s; median gait parameters computed with FoG summary.", input_file)
-    return summary_df
-
+    return summary_df, None
 
 
 if __name__ == "__main__":

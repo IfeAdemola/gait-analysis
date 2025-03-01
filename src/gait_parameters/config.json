@@ -24,5 +24,6 @@
     "fi_threshold": 2.0,
     "window_size_sec": 2.0,
     "step_size_sec": 0.5
-  }
+  },
+  "visualize": true
 }

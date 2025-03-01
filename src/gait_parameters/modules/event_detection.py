@@ -6,7 +6,8 @@ import os
 import json
 
 from my_utils.helpers import detect_extremas
-from my_utils.plotting import plot_raw_pose, plot_extremas, plot_extrema_frames, plot_combined_toe
+# Update the plotting import to the new combined function
+from my_utils.plotting import plot_combined_extremas_and_toe, plot_extrema_frames
 
 def get_project_root():
     """
@@ -74,12 +75,6 @@ class EventDetector:
             logger.exception("Error rotating pose data: %s", str(e))
             raise
 
-        # Optionally plot raw pose if needed
-        # try:
-        #     plot_raw_pose(rotated_pose_data, self.frame_rate, output_dir=self.plots_dir)
-        # except Exception as e:
-        #     logger.exception("Error plotting raw pose data: %s", str(e))
-
         try:
             if self.algorithm == "zeni":
                 events = self._detect_events_zeni(rotated_pose_data)
@@ -139,13 +134,16 @@ class EventDetector:
                 logger.exception("Error converting indices for landmark %s: %s", landmark, str(e))
                 event_extrema_data[landmark_name] = np.array([])
 
-        if self.make_plot:
-            # Plot the individual extremas using the hardcoded plots directory.
-            plot_extremas(all_forward_movement, all_extrema_data, self.frame_rate, self.input_path, output_dir=self.plots_dir)
-            
-            # Call the combined toe plot if both toe markers are available.
-            if "TO_left" in all_forward_movement and "TO_right" in all_forward_movement:
-                plot_combined_toe(all_forward_movement, all_extrema_data, self.frame_rate, self.input_path, output_dir=self.plots_dir)
+        # Automatic plotting is now disabled here.
+        # if self.make_plot:
+        #     if "TO_left" in all_forward_movement and "TO_right" in all_forward_movement:
+        #         plot_combined_extremas_and_toe(
+        #             all_forward_movement,
+        #             all_extrema_data,
+        #             self.frame_rate,
+        #             self.input_path,
+        #             output_dir=self.plots_dir
+        #         )
        
         try:
             max_length = max(len(v) for v in event_extrema_data.values() if isinstance(v, (list, np.ndarray)))

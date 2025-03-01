@@ -1,10 +1,12 @@
 import math
 import os
 import cv2
+import io
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks, butter, filtfilt
+from PIL import Image
 
 def butter_lowpass_filter(data, cutoff=3, fs=30, order=4):
     """
@@ -42,31 +44,46 @@ def detect_extremas(signal):
     valleys, _ = find_peaks(-signal, height=-threshold)
     return peaks, valleys 
 
-def plot_raw_pose(landmarks, frame_rate, output_dir="plots"):
+def display_plot_with_cv2(fig):
     """
-    Plot raw vertical displacement signals for heel and toe landmarks.
+    Save the matplotlib figure to an in-memory buffer, load it using OpenCV,
+    and display it in a native window.
+    """
+    if fig is None:
+        print("No figure was generated. Skipping visualization.", flush=True)
+        return
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=100)
+    buf.seek(0)
+    pil_img = Image.open(buf)
+    img_array = np.array(pil_img)
+    img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
     
-    Left subplot: Heel vertical positions.
-    Right subplot: Toe vertical positions.
+    # Removed the extra printed prompt here.
+    cv2.imshow("Plot", img_array)
+    while True:
+        key = cv2.waitKey(1)
+        if key != -1:
+            break
+    cv2.destroyAllWindows()
+    buf.close()
+
+def plot_raw_pose(landmarks, frame_rate, output_dir="plots", show_plot=False):
+    """
+    (Deprecated) Plot raw vertical displacement signals for heel and toe landmarks.
     
-    The y-axis shows the vertical position (z coordinate) for each landmark.
-    Saves the figure as 'raw_pose.png' in the output directory.
-    
-    Parameters:
-      - landmarks: A DataFrame or dict with keys like ("left_heel", "z").
-      - frame_rate: Frames per second.
-      - output_dir: Directory to save the plot.
+    Not used in the combined figure.
     """
     heel_left_z = landmarks[("left_heel", "z")]
     heel_right_z = landmarks[("right_heel", "z")]
-    toe_left_z = landmarks[("left_foot_index", "z")]  # Toe marker
-    toe_right_z = landmarks[("right_foot_index", "z")]  # Toe marker
+    toe_left_z = landmarks[("left_foot_index", "z")]
+    toe_right_z = landmarks[("right_foot_index", "z")]
     
     time = np.array([t / frame_rate for t in range(len(heel_left_z))])
     
     fig, axes = plt.subplots(1, 2, figsize=(16, 8))
     
-    # Plot heel vertical positions
     axes[0].plot(time, heel_left_z, label="Left Heel (z coordinate)", color='blue', linewidth=2)
     axes[0].plot(time, heel_right_z, label="Right Heel (z coordinate)", color='orange', linewidth=2)
     axes[0].set_xlabel("Time (s)", fontsize=14)
@@ -75,7 +92,6 @@ def plot_raw_pose(landmarks, frame_rate, output_dir="plots"):
     axes[0].legend(loc='best', fontsize=12)
     axes[0].grid(True, linestyle='--', alpha=0.6)
     
-    # Plot toe vertical positions
     axes[1].plot(time, toe_left_z, label="Left Toe (z coordinate)", color='blue', linewidth=2)
     axes[1].plot(time, toe_right_z, label="Right Toe (z coordinate)", color='orange', linewidth=2)
     axes[1].set_xlabel("Time (s)", fontsize=14)
@@ -85,96 +101,110 @@ def plot_raw_pose(landmarks, frame_rate, output_dir="plots"):
     axes[1].grid(True, linestyle='--', alpha=0.6)
     
     plt.tight_layout()
-    os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, "raw_pose.png"), dpi=300)
+    if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
+        plt.savefig(os.path.join(output_dir, "raw_pose.png"), dpi=300)
+    if show_plot:
+        display_plot_with_cv2(fig)
     plt.close(fig)
 
-def plot_extremas(all_forward_movement, all_extrema_data, frame_rate, input_path, output_dir="plots"):
+def plot_combined_extremas_and_toe(all_forward_movement, all_extrema_data, frame_rate, input_path, output_dir="plots", show_plot=False):
     """
-    Plot the forward displacement signals with detected peaks and valleys.
+    Create a combined figure that displays both the extremas (peaks and valleys) 
+    of the toe signals and the combined toe movements.
     
-    For each event (e.g., HS_left, TO_right), the plot shows:
-      - A line plot of the forward displacement signal computed as:
-            (landmark z-coordinate - sacrum z-coordinate)
-      - Red scatter points marking detected peaks (e.g. heel strikes).
-      - Blue scatter points marking detected valleys (e.g. toe-offs).
-      
-    The x-axis is time (s) and the y-axis is the forward displacement.
-    The title for each subplot includes the landmark type (Heel or Toe) and side (Left/Right)
-    along with a note on the displacement computation.
+    The layout is as follows:
+      - Top left: Left Toe Forward Movement with Detected Peaks & Valleys.
+      - Top right: Right Toe Forward Movement with Detected Peaks & Valleys.
+      - Bottom left: Overlay of Left & Right Toe Displacements Over Time.
+      - Bottom right: Phase Plot showing the Relationship Between Left & Right Toe Movements.
     
-    The composite figure is saved with a filename derived from the input file.
+    If output_dir is provided, the figure is saved; if show_plot is True,
+    the figure is displayed interactively using cv2.
     
     Parameters:
-      - all_forward_movement: Dict mapping event names to displacement signals.
-      - all_extrema_data: Dict mapping event names to extrema data (peaks, valleys).
+      - all_forward_movement: dict with keys "TO_left" and "TO_right" containing displacement signals.
+      - all_extrema_data: dict with keys "TO_left" and "TO_right" containing extrema data (peaks, valleys).
       - frame_rate: Frames per second.
-      - input_path: Path to the input file (used to name the output file).
-      - output_dir: Directory to save the plot.
+      - input_path: Used for naming the output file.
+      - output_dir: Directory to save the plot (or None for no saving).
+      - show_plot: If True, display the plot interactively.
     """
-    # Create time axis
-    time = np.arange(len(next(iter(all_forward_movement.values())))) / frame_rate
+    import os
+    import numpy as np
+    import matplotlib.pyplot as plt
 
-    # Create a 2x2 grid for the subplots (adjust if number of events differs)
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    axes = axes.flatten()
-
-    for ax, (event_name, forward_movement) in zip(axes, all_forward_movement.items()):
-        peaks_time = all_extrema_data[event_name]["peaks"]
-        valleys_time = all_extrema_data[event_name]["valleys"]
-        
-        # Plot the forward displacement signal (landmark z - sacrum z)
-        ax.plot(time, forward_movement, label="Forward Displacement", 
-                color='black', linewidth=2)
-        
-        # Convert time (in seconds) to indices for y-values extraction
-        indices_peaks = (peaks_time * frame_rate).astype(int)
-        indices_valleys = (valleys_time * frame_rate).astype(int)
-        
-        # Scatter plot for peaks and valleys
-        ax.scatter(peaks_time, forward_movement[indices_peaks], color='red', s=50, label="Peaks")
-        ax.scatter(valleys_time, forward_movement[indices_valleys], color='blue', s=50, label="Valleys")
-        
-        # Build a descriptive title based on event name
-        if "hs" in event_name.lower():
-            landmark_type = "Heel"
-        elif "to" in event_name.lower():
-            landmark_type = "Toe"
-        else:
-            landmark_type = event_name.title()
-        side = "Left" if "left" in event_name.lower() else "Right"
-        title_text = f"{side} {landmark_type} Forward Displacement\n(z landmark - z sacrum)"
-        ax.set_title(title_text, fontsize=14)
-        ax.set_xlabel("Time (s)", fontsize=12)
-        ax.set_ylabel("Forward Displacement\n(z coordinate difference)", fontsize=12)
-        ax.legend(loc='best', fontsize=10)
-        ax.grid(True, linestyle='--', alpha=0.6)
-        
-        # Optionally add annotations when there are only a few extrema points
-        if len(peaks_time) < 10:
-            for t, y in zip(peaks_time, forward_movement[indices_peaks]):
-                ax.annotate("Peak", xy=(t, y), xytext=(t, y + 0.05),
-                            arrowprops=dict(arrowstyle="->", color='red'), fontsize=8)
-        if len(valleys_time) < 10:
-            for t, y in zip(valleys_time, forward_movement[indices_valleys]):
-                ax.annotate("Valley", xy=(t, y), xytext=(t, y - 0.05),
-                            arrowprops=dict(arrowstyle="->", color='blue'), fontsize=8)
-
+    
+    # Top left: Left Toe Forward Movement with Detected Peaks & Valleys
+    ax = axes[0, 0]
+    time_left = np.arange(len(all_forward_movement["TO_left"])) / frame_rate
+    ax.plot(time_left, all_forward_movement["TO_left"], label="Left Toe", color='blue', linewidth=2)
+    peaks_left = all_extrema_data["TO_left"]["peaks"]
+    valleys_left = all_extrema_data["TO_left"]["valleys"]
+    indices_peaks_left = (peaks_left * frame_rate).astype(int)
+    indices_valleys_left = (valleys_left * frame_rate).astype(int)
+    ax.scatter(peaks_left, all_forward_movement["TO_left"][indices_peaks_left], color='red', s=50, label="Peaks (Maxima)")
+    ax.scatter(valleys_left, all_forward_movement["TO_left"][indices_valleys_left], color='green', s=50, label="Valleys (Minima)")
+    ax.set_title("Left Toe Forward Movement: Detected Peaks & Valleys", fontsize=14)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Displacement")
+    ax.legend(loc='best')
+    ax.grid(True, linestyle='--', alpha=0.6)
+    
+    # Top right: Right Toe Forward Movement with Detected Peaks & Valleys
+    ax = axes[0, 1]
+    time_right = np.arange(len(all_forward_movement["TO_right"])) / frame_rate
+    ax.plot(time_right, all_forward_movement["TO_right"], label="Right Toe", color='orange', linewidth=2)
+    peaks_right = all_extrema_data["TO_right"]["peaks"]
+    valleys_right = all_extrema_data["TO_right"]["valleys"]
+    indices_peaks_right = (peaks_right * frame_rate).astype(int)
+    indices_valleys_right = (valleys_right * frame_rate).astype(int)
+    ax.scatter(peaks_right, all_forward_movement["TO_right"][indices_peaks_right], color='red', s=50, label="Peaks (Maxima)")
+    ax.scatter(valleys_right, all_forward_movement["TO_right"][indices_valleys_right], color='green', s=50, label="Valleys (Minima)")
+    ax.set_title("Right Toe Forward Movement: Detected Peaks & Valleys", fontsize=14)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Displacement")
+    ax.legend(loc='best')
+    ax.grid(True, linestyle='--', alpha=0.6)
+    
+    # Bottom left: Overlay of Left & Right Toe Displacements Over Time
+    ax = axes[1, 0]
+    time_combined = np.arange(len(all_forward_movement["TO_left"])) / frame_rate
+    ax.plot(time_combined, all_forward_movement["TO_left"], label="Left Toe", color='blue', linewidth=2)
+    ax.plot(time_combined, all_forward_movement["TO_right"], label="Right Toe", color='orange', linewidth=2)
+    ax.set_title("Overlay of Left & Right Toe Displacements Over Time", fontsize=14)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Displacement")
+    ax.legend(loc='best')
+    ax.grid(True, linestyle='--', alpha=0.6)
+    
+    # Bottom right: Phase Plot showing the Relationship Between Left & Right Toe Movements
+    ax = axes[1, 1]
+    ax.plot(all_forward_movement["TO_left"], all_forward_movement["TO_right"], color='black', linewidth=2)
+    ax.set_title("Phase Plot: Relationship Between Left & Right Toe Movements", fontsize=14)
+    ax.set_xlabel("Left Toe Displacement")
+    ax.set_ylabel("Right Toe Displacement")
+    ax.grid(True, linestyle='--', alpha=0.6)
+    
     filename = os.path.basename(input_path).split('.')[0]
-    fig.suptitle(f"Forward Displacement Signals for {filename}\n(Computed as landmark z - sacrum z)", fontsize=16)
+    fig.suptitle(f"Combined Extremas and Toe Movements for {filename}", fontsize=16)
     
     plt.tight_layout(rect=[0, 0, 1, 0.95])
-    os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, f"{filename}_extremas.png"), dpi=300)
+    if output_dir is not None:
+        os.makedirs(output_dir, exist_ok=True)
+        fig.savefig(os.path.join(output_dir, f"{filename}_combined_extremas_toe.png"), dpi=300)
+    if show_plot:
+        display_plot_with_cv2(fig)
     plt.close(fig)
+
 
 def plot_extrema_frames(extremas_dict, output_dir, frames_dir):
     """
     Plot and save video frames corresponding to the detected extrema.
     
     For each key in extremas_dict, two plots are created (one for peaks and one for valleys)
-    that display the frames (images) associated with the detected extrema. The images are
-    arranged in a grid and saved in the output directory.
+    and saved in the output directory.
     
     Parameters:
       - extremas_dict: Dict mapping keys to a tuple (peaks, valleys).
@@ -188,7 +218,7 @@ def plot_extrema_frames(extremas_dict, output_dir, frames_dir):
 
         for extrema_type, indices in extrema_types.items():
             if len(indices) == 0:
-                continue  # Skip if no extrema points found
+                continue
         
             img_width, img_height = 10, 7
             cols = 4
@@ -196,24 +226,20 @@ def plot_extrema_frames(extremas_dict, output_dir, frames_dir):
             figsize = (cols * img_width, rows * img_height)
 
             fig, axes = plt.subplots(rows, cols, figsize=figsize)
-            axes = np.array(axes).flatten()  # Flatten axes array for easy iteration
+            axes = np.array(axes).flatten()
 
             for i, idx in enumerate(indices):
                 frame_filename = os.path.join(frames_dir, f"frame_{int(idx)}.png")
                 frame = cv2.imread(frame_filename)
-
                 if frame is not None:
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     axes[i].imshow(frame_rgb)
                     axes[i].axis('off')
                     axes[i].set_title(f"Frame {int(idx)}", fontsize=16)
                 else:
-                    axes[i].axis('off')  # Hide empty subplot
-
-            # Hide any remaining empty subplots
+                    axes[i].axis('off')
             for j in range(i + 1, len(axes)):
                 axes[j].axis("off")
-
             plt.tight_layout()
             plt.savefig(os.path.join(output_dir, f"{key}_{extrema_type}.png"), dpi=300)
             plt.close(fig)
@@ -240,59 +266,3 @@ def extract_frames(video_path, output_dir):
             cv2.imwrite(frame_filename, frame)
     
     cap.release()
-
-def plot_combined_toe(all_forward_movement, all_extrema_data, frame_rate, input_path, output_dir="plots"):
-    """
-    Plot combined toe events in two ways:
-      1. A time series plot that overlays Toe Left and Toe Right forward displacement signals.
-         (Forward displacement is computed as toe z-coordinate minus sacrum z-coordinate.)
-      2. A phase plot of Toe Left displacement versus Toe Right displacement.
-    
-    This helps visualize both the individual signal patterns (top plot) and how the two signals cycle
-    relative to one another (bottom plot).
-    
-    Parameters:
-      - all_forward_movement: Dict mapping event names to displacement signals.
-      - all_extrema_data: Dict mapping event names to extrema data (peaks, valleys) [unused here].
-      - frame_rate: Frames per second.
-      - input_path: Path to the input file (used for naming the output file).
-      - output_dir: Directory to save the plot.
-    """
-    # Retrieve toe signals
-    toe_left_signal = all_forward_movement.get("TO_left")
-    toe_right_signal = all_forward_movement.get("TO_right")
-
-    # Create time axis (in seconds)
-    time = np.arange(len(toe_left_signal)) / frame_rate
-
-    # Create a figure with two subplots: top (time series) and bottom (phase plot)
-    fig, axes = plt.subplots(2, 1, figsize=(16, 12))
-    
-    # --- Top Plot: Time Series ---
-    ax = axes[0]
-    ax.plot(time, toe_left_signal, label="Toe Left", color="blue", linewidth=2)
-    ax.plot(time, toe_right_signal, label="Toe Right", color="orange", linewidth=2)
-    
-    ax.set_title("Combined Toe Forward Displacement Time Series\n(Toe z - Sacrum z)", fontsize=16)
-    ax.set_xlabel("Time (s)", fontsize=14)
-    ax.set_ylabel("Forward Displacement (z difference)", fontsize=14)
-    ax.legend(loc='best', fontsize=12)
-    ax.grid(True, linestyle='--', alpha=0.6)
-    
-    # --- Bottom Plot: Phase Plot ---
-    ax2 = axes[1]
-    # The phase plot shows Toe Left displacement on the x-axis and Toe Right displacement on the y-axis.
-    # This visualizes how the two signals vary relative to each other over the gait cycle.
-    ax2.plot(toe_left_signal, toe_right_signal, color='black', linewidth=2)
-    ax2.set_title("Phase Plot: Toe Left vs. Toe Right", fontsize=16)
-    ax2.set_xlabel("Toe Left Displacement (z difference)", fontsize=14)
-    ax2.set_ylabel("Toe Right Displacement (z difference)", fontsize=14)
-    ax2.grid(True, linestyle='--', alpha=0.6)
-    
-    # Save the combined toe plot
-    filename = os.path.basename(input_path).split('.')[0]
-    os.makedirs(output_dir, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f"{filename}_combined_toe.png"), dpi=300)
-    plt.close(fig)
-
