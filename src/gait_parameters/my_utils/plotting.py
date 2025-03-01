@@ -60,7 +60,9 @@ def display_plot_with_cv2(fig):
     img_array = np.array(pil_img)
     img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
     
-    # Removed the extra printed prompt here.
+    # Print the command before showing the figure
+    print("Press any key in the figure window to continue...", flush=True)
+    
     cv2.imshow("Plot", img_array)
     while True:
         key = cv2.waitKey(1)
@@ -129,11 +131,10 @@ def plot_combined_extremas_and_toe(all_forward_movement, all_extrema_data, frame
       - input_path: Used for naming the output file.
       - output_dir: Directory to save the plot (or None for no saving).
       - show_plot: If True, display the plot interactively.
+      
+    Returns:
+      The matplotlib figure object.
     """
-    import os
-    import numpy as np
-    import matplotlib.pyplot as plt
-
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     
     # Top left: Left Toe Forward Movement with Detected Peaks & Valleys
@@ -196,8 +197,8 @@ def plot_combined_extremas_and_toe(all_forward_movement, all_extrema_data, frame
         fig.savefig(os.path.join(output_dir, f"{filename}_combined_extremas_toe.png"), dpi=300)
     if show_plot:
         display_plot_with_cv2(fig)
-    plt.close(fig)
-
+    # Instead of closing the figure, return it.
+    return fig
 
 def plot_extrema_frames(extremas_dict, output_dir, frames_dir):
     """

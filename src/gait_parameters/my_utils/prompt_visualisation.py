@@ -1,5 +1,4 @@
 import os
-from my_utils.plotting import display_plot_with_cv2  # we'll update that too
 import logging
 import cv2
 
@@ -37,6 +36,7 @@ def prompt_visualisation(fig, input_file, normal_save_dir, dpi=300):
     fig.savefig(temp_save_path, dpi=dpi)
     
     # Display the figure interactively using our updated in-memory method.
+    from my_utils.plotting import display_plot_with_cv2
     display_plot_with_cv2(fig)
     
     # Prompt the user for validation.

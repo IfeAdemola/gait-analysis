@@ -182,7 +182,6 @@ def process_single_file(input_file, output_dir, config):
     pipeline.detect_events()
 
     # --- Visualization Integration ---
-    # If "visualize" is set in the config, generate and prompt the combined figure.
     if config.get("visualize", False):
         from my_utils.plotting import butter_lowpass_filter, detect_extremas, plot_combined_extremas_and_toe
         from my_utils.prompt_visualisation import prompt_visualisation
@@ -217,9 +216,8 @@ def process_single_file(input_file, output_dir, config):
             (toe_left_signal.nunique() <= 1 and toe_right_signal.nunique() <= 1)):
             logger.warning("Forward displacement signals are empty or constant. Skipping visualization.")
         else:
-            # Generate the combined figure.
-            # Here we use show_plot=True to ensure drawing happens, then capture the figure.
-            plot_combined_extremas_and_toe(
+            # Generate the combined figure and capture the figure handle.
+            fig = plot_combined_extremas_and_toe(
                 all_forward_movement,
                 all_extrema_data,
                 fs,
@@ -227,16 +225,12 @@ def process_single_file(input_file, output_dir, config):
                 output_dir=None,
                 show_plot=True
             )
-            fig = plt.gcf()
-            
             # Use the prompt_visualisation helper.
             approved, new_file = prompt_visualisation(fig, input_file, config["event_detection"]["plots_dir"])
             if not approved:
-                # If not approved, skip this file.
+                plt.close(fig)
                 return None, new_file
-            # Close the figure after processing.
             plt.close(fig)
-        
     # --- End Visualization Integration ---
 
     # Continue with processing if visual checks passed.
