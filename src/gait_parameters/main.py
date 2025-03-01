@@ -29,19 +29,29 @@ def get_project_root():
 
 def get_external_folder(external_name, project_root, fallback_relative):
     """
-    Check for an external folder (one level above the project) named external_name.
-    If found, return its absolute path; otherwise, return the fallback path,
-    which is relative to the project_root.
+    For the "Output" folder: always use the external folder (one level above the project)
+    with the given name. If it doesn't exist, create it.
+    
+    For other folders (e.g., "Data"), use the external folder if it exists; otherwise,
+    fall back to the relative folder provided.
     """
     parent_dir = os.path.abspath(os.path.join(project_root, ".."))
     external_path = os.path.join(parent_dir, external_name)
-    if os.path.isdir(external_path):
-        logger.info("Using external %s folder: %s", external_name, external_path)
+    if external_name == "Output":
+        if not os.path.isdir(external_path):
+            logger.info("External %s folder not found. Creating folder: %s", external_name, external_path)
+            os.makedirs(external_path, exist_ok=True)
+        else:
+            logger.info("Using external %s folder: %s", external_name, external_path)
         return external_path
     else:
-        fallback = os.path.join(project_root, fallback_relative)
-        logger.info("External %s folder not found. Using internal folder: %s", external_name, fallback)
-        return fallback
+        if os.path.isdir(external_path):
+            logger.info("Using external %s folder: %s", external_name, external_path)
+            return external_path
+        else:
+            fallback = os.path.join(project_root, fallback_relative)
+            logger.info("External %s folder not found. Using internal folder: %s", external_name, fallback)
+            return fallback
 
 
 def main():
@@ -134,8 +144,9 @@ def process_single_file(input_file, output_dir, config):
         save_parameters_path=None
     )
 
-    # Run the pipeline
+    # Run the pipeline steps
     pose_data = pipeline.load_input()
+    print(pose_data.columns)
     if pose_data is None:
         logger.info("Skipping %s due to loading issues.", input_file)
         return None
@@ -144,8 +155,16 @@ def process_single_file(input_file, output_dir, config):
     pipeline.detect_events()
     gait_parameters = pipeline.compute_gait_parameters()
 
-    # Compute a summary containing only the median values
-    video_name = os.path.splitext(os.path.basename(input_file))[0]
+    # Detect Freezing of Gait events and compute summary metrics.
+    fog_events = pipeline.detect_freezes()
+    if fog_events:
+        fog_count = len(fog_events)
+        fog_total_duration = sum(event['duration_sec'] for event in fog_events)
+    else:
+        fog_count = 0
+        fog_total_duration = 0.0
+
+    # Compute a summary containing only the median values for gait parameters
     median_summary = gait_parameters.median(numeric_only=True)
 
     # Flatten the MultiIndex if present
@@ -156,14 +175,20 @@ def process_single_file(input_file, output_dir, config):
     summary_df = pd.DataFrame(median_summary).T
 
     # Add the video_name column
+    video_name = os.path.splitext(os.path.basename(input_file))[0]
     summary_df['video_name'] = video_name
+
+    # Add FoG summary columns to the summary DataFrame
+    summary_df['fog_count'] = fog_count
+    summary_df['fog_total_duration_sec'] = fog_total_duration
 
     # Reorder columns so that video_name is first
     columns = ['video_name'] + [col for col in summary_df.columns if col != 'video_name']
     summary_df = summary_df[columns]
 
-    logger.info("Processed %s; median gait parameters computed.", input_file)
+    logger.info("Processed %s; median gait parameters computed with FoG summary.", input_file)
     return summary_df
+
 
 
 if __name__ == "__main__":

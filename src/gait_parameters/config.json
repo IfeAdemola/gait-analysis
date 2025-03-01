@@ -18,5 +18,11 @@
   "preprocessing": {
     "median_filter_window": 31,
     "normalization": true
+  },
+  "freezing": {
+    "velocity_threshold": 0.05,
+    "fi_threshold": 2.0,
+    "window_size_sec": 2.0,
+    "step_size_sec": 0.5
   }
 }

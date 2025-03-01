@@ -8,32 +8,26 @@ import json
 from my_utils.helpers import detect_extremas
 from my_utils.plotting import plot_raw_pose, plot_extremas, plot_extrema_frames, plot_combined_toe
 
-
 def get_project_root():
     """
     Returns the absolute path two levels above this file.
     """
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-
 def load_config(config_path):
     with open(config_path, "r") as f:
         return json.load(f)
 
-
-def get_plots_dir(config=None):
+def get_plots_dir():
     """
-    Determine the plots directory from config (if provided) or default to output/plots relative to project root.
+    Always returns the plots directory inside the external Output folder.
+    The external Output folder is defined as one level above the project root.
     """
-    if config and "event_detection" in config:
-        plots_dir = config["event_detection"].get("plots_dir")
-        if not plots_dir:
-            plots_dir = os.path.join(get_project_root(), "output", "plots")
-    else:
-        plots_dir = os.path.join(get_project_root(), "output", "plots")
+    project_root = get_project_root()
+    external_output = os.path.join(os.path.abspath(os.path.join(project_root, "..")), "Output")
+    plots_dir = os.path.join(external_output, "plots")
     os.makedirs(plots_dir, exist_ok=True)
     return plots_dir
-
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -45,7 +39,6 @@ if not logger.hasHandlers():
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-
 class EventDetector:
     """
     Detects heel strike (HS) and toe-off (TO) events from pose data.
@@ -53,17 +46,15 @@ class EventDetector:
     
     def __init__(self, input_path, algorithm="zeni", make_plot=True, frame_rate=25, window_size=100, step_size=50, config=None, **kwargs):
         self.input_path = input_path 
-        project_root = get_project_root()
+        # Hardcode the plots directory to always be the external Output/plots folder.
+        self.plots_dir = get_plots_dir()
+        os.makedirs(self.plots_dir, exist_ok=True)
         self.algorithm = algorithm
         self.make_plot = make_plot
         self.frame_rate = frame_rate
         self.window_size = window_size
         self.step_size = step_size
         self.config = config or {}
-        # Instead of converting to absolute path here, use the value from the config directly.
-        self.plots_dir = self.config.get("event_detection", {}).get("plots_dir", os.path.join(project_root, "output", "plots"))
-        os.makedirs(self.plots_dir, exist_ok=True)
-        
     
     def detect_heel_toe_events(self, pose_data):
         try:
@@ -83,7 +74,7 @@ class EventDetector:
             logger.exception("Error rotating pose data: %s", str(e))
             raise
 
-        # Uncomment the following block if you also want to see raw pose plots:
+        # Optionally plot raw pose if needed
         # try:
         #     plot_raw_pose(rotated_pose_data, self.frame_rate, output_dir=self.plots_dir)
         # except Exception as e:
@@ -149,10 +140,10 @@ class EventDetector:
                 event_extrema_data[landmark_name] = np.array([])
 
         if self.make_plot:
-            # Plot the individual extremas
+            # Plot the individual extremas using the hardcoded plots directory.
             plot_extremas(all_forward_movement, all_extrema_data, self.frame_rate, self.input_path, output_dir=self.plots_dir)
             
-            # New: Call the combined toe plot if both toe markers are available.
+            # Call the combined toe plot if both toe markers are available.
             if "TO_left" in all_forward_movement and "TO_right" in all_forward_movement:
                 plot_combined_toe(all_forward_movement, all_extrema_data, self.frame_rate, self.input_path, output_dir=self.plots_dir)
        
