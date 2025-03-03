@@ -3,8 +3,9 @@ import logging
 
 from modules.pose_estimation import PoseEstimator
 from modules.preprocessing import Preprocessor
-from modules.event_detection import EventDetector
-from modules.parameters_computation import GaitParameters
+from modules.gait_event_detection import EventDetector
+from modules.gait_parameters_computation import GaitParameters
+
 
 from my_utils.helpers import load_csv, get_frame_rate
 

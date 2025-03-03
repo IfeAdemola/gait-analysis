@@ -11,3 +11,5 @@ torch==1.10.0
 torchvision==0.11.2
 requests
 yolov5
+cython
+networkx

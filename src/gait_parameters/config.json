@@ -25,5 +25,6 @@
     "window_size_sec": 2.0,
     "step_size_sec": 0.5
   },
-  "visualize": false
+  "visualize": false,
+  "analysis_module": "postural_tremor"
 }
