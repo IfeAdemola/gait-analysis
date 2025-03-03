@@ -13,7 +13,7 @@ from mediapipe.framework.formats import landmark_pb2
 from mediapipe import solutions
 
 from my_utils.mediapipe_landmarks import prepare_empty_dataframe
-from my_utils.helpers import set_ffmpeg_path
+from my_utils.helpers import set_ffmpeg_path, get_robust_fps  # Updated import for robust FPS extraction
 
 
 def load_config(config_path):
@@ -157,12 +157,11 @@ class PoseEstimator:
         
         tracked_csv_path, tracked_video_path = self.prepare_file_paths(video_path, tracked_csv_dir, tracked_video_dir)
         
-        # If tracked CSV already exists, load it and return the data (so we can run further analyses)
+        # If tracked CSV already exists, load it and return the data.
         if self.make_csv and os.path.isfile(tracked_csv_path):
             self.logger.info(f"CSV already exists for {video_path}. Loading tracked data.")
             import pandas as pd  # Import here if not already imported at the top
             try:
-                # Attempt to load with two header rows to preserve the MultiIndex
                 marker_df = pd.read_csv(tracked_csv_path, header=[0,1])
             except Exception as e:
                 self.logger.error(f"Error loading CSV with multi-index: {e}. Loading without multi-index.")
@@ -175,16 +174,11 @@ class PoseEstimator:
                 fs = int(metadata.get("fps", 25))
             return marker_df, fs
 
-        # Optionally, check tracked video existence, but the key is to load CSV if available.
         if self.make_video and os.path.isfile(tracked_video_path):
             self.logger.info(f"Tracked Video already exists for {video_path}. (Using CSV if available)")
-            # We don't return here since CSV check takes precedence.
 
-        # If tracked CSV does not exist, proceed with processing
         videogen = list(skvideo.io.vreader(video_path))
-        metadata = skvideo.io.ffprobe(video_path)
-        num, denom = metadata['video']['@r_frame_rate'].split('/')
-        fs = float(num) / float(denom)
+        fs = get_robust_fps(video_path)
         self.logger.info(f"Video loaded. Frame rate: {fs} fps.")
         writer = skvideo.io.FFmpegWriter(
                     tracked_video_path, 
@@ -198,12 +192,18 @@ class PoseEstimator:
                 ) if self.make_video else None
 
         marker_df, marker_mapping = prepare_empty_dataframe(hands='both', pose=True)
+        # Log the marker mapping and verify that the expected keys are present.
+        self.logger.debug("Initial empty pose DataFrame columns: {}".format(marker_df.columns))
+        self.logger.debug("Marker mapping: {}".format(marker_mapping))
+        if "left_foot_index" not in marker_mapping:
+            self.logger.error("Marker mapping does not contain key 'left_foot_index'")
+        if "right_foot_index" not in marker_mapping:
+            self.logger.error("Marker mapping does not contain key 'right_foot_index'")
 
         for i, image in enumerate(tqdm(videogen, desc=f"Processing {os.path.basename(video_path)}", total=len(videogen))):
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
             frame_ms = int(fs * i)
 
-            # Run MediaPipe models for hands and pose.
             results_hands = self.hands.detect_for_video(mp_image, frame_ms)
             results_pose = self.pose.detect_for_video(mp_image, frame_ms)
 

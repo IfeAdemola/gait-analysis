@@ -4,6 +4,7 @@ import numpy as np
 import json
 import shutil
 import skvideo
+import subprocess  # New import for robust FPS extraction
 
 from scipy.signal import find_peaks
 from scipy.signal import butter, lfilter, filtfilt
@@ -20,7 +21,7 @@ def set_ffmpeg_path():
         print("FFmpeg is not found on the system.")
     return
 
-# --- Get Video Frame Rate ---  
+# --- Get Video Frame Rate from Metadata (for CSV inputs) ---  
 def get_metadata_path(file_path):
     """Get the metadata file path corresponding to the input CSV file
 
@@ -61,8 +62,82 @@ def get_frame_rate(file_path):
     except (FileNotFoundError, json.JSONDecodeError) as e:
         print('Error reading or parsing file:', e)
         return None
+
+# --- Robust FPS Extraction for Video Files ---
+def get_fps_ffprobe(video_path):
+    """
+    Extracts the frame rate using ffprobe via a subprocess call.
+    Returns the FPS as a float.
+    """
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=r_frame_rate",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        video_path
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe error: {result.stderr.strip()}")
+    fps_str = result.stdout.strip()
+    if '/' in fps_str:
+        num, denom = fps_str.split('/')
+        return float(num) / float(denom)
+    else:
+        return float(fps_str)
+
+def get_fps_opencv(video_path):
+    """
+    Extracts the frame rate using OpenCV's VideoCapture.
+    Returns the FPS as a float.
+    """
+    import cv2  # Import locally since not all scripts may need cv2
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Unable to open video file: {video_path}")
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    return fps
+
+def get_robust_fps(video_path, tolerance=0.1):
+    """
+    Combines ffprobe and OpenCV methods to robustly extract the FPS of a video.
+    If both methods are available and within tolerance, the ffprobe value is used.
+    Otherwise, a fallback is applied.
     
- 
+    Args:
+        video_path (str): Path to the video file.
+        tolerance (float): Relative difference tolerance between the two methods.
+    
+    Returns:
+        float: Robustly determined frames per second.
+    """
+    try:
+        fps_ffprobe = get_fps_ffprobe(video_path)
+    except Exception as e:
+        print(f"ffprobe extraction failed: {e}")
+        fps_ffprobe = None
+    
+    try:
+        fps_cv2 = get_fps_opencv(video_path)
+    except Exception as e:
+        print(f"OpenCV extraction failed: {e}")
+        fps_cv2 = None
+    
+    if fps_ffprobe and fps_cv2:
+        # If the two values are similar (within tolerance), use one; otherwise, warn and choose ffprobe.
+        if abs(fps_ffprobe - fps_cv2) / fps_ffprobe < tolerance:
+            return fps_ffprobe
+        else:
+            print(f"Discrepancy in FPS values: ffprobe={fps_ffprobe}, OpenCV={fps_cv2}. Using ffprobe.")
+            return fps_ffprobe
+    elif fps_ffprobe:
+        return fps_ffprobe
+    elif fps_cv2:
+        return fps_cv2
+    else:
+        raise RuntimeError("Unable to extract FPS using either method.")
+
 # --- File Handling Utilities ---
 def validate_file_exists(file_path):
     if not os.path.exists(file_path):
@@ -106,7 +181,6 @@ def save_csv(data, file_path):
         df = pd.DataFrame(data)
     df.to_csv(file_path, index=False)
 
-
 # --- Gait Analysis Utilities ---
 def detect_extremas(signal):
     """Find peaks and valleys in the filtered signal."""
@@ -124,7 +198,6 @@ def detect_peaks(signal, threshold=0.5):
     """
     peaks, _ = find_peaks(signal, height=threshold)
     return peaks
-
 
 # --- Filtering Utilities ---
 def butter_lowpass_filter(df, columns=None, cutoff=3, fs=30, order=4):
@@ -165,7 +238,6 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
     y = lfilter(b, a, data)
     return y
 
-
 # --- Logging Utilities ---
 def log(message, level="INFO"):
     """
@@ -174,7 +246,6 @@ def log(message, level="INFO"):
     :param level: str, log level (e.g., 'INFO', 'DEBUG', 'WARNING')
     """
     print(f"[{level}] {message}")
-
 
 def compute_and_save_summary(gait_df, video_name, output_dir):
     """
@@ -217,4 +288,3 @@ def compute_and_save_summary(gait_df, video_name, output_dir):
     
     # Return the summary DataFrame so it can be aggregated later.
     return summary_stats
-

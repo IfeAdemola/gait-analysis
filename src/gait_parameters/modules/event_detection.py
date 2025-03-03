@@ -56,8 +56,14 @@ class EventDetector:
         self.window_size = window_size
         self.step_size = step_size
         self.config = config or {}
+        
+        # Log the frame rate being used.
+        logger.info(f"EventDetector initialized with frame_rate: {self.frame_rate} fps")
     
     def detect_heel_toe_events(self, pose_data):
+        # Log the column names of the incoming pose_data DataFrame for debugging.
+        logger.debug("Pose data columns in detect_heel_toe_events: {}".format(pose_data.columns))
+        
         try:
             rotation_angles = compute_framewise_rotation_angles(
                 pose_data,
@@ -93,14 +99,14 @@ class EventDetector:
         all_forward_movement = {}
         all_extrema_data = {}
         event_extrema_data = {}
-    
+        
         foot_landmarks = {
             "HS_left": "left_heel",
             "HS_right": "right_heel",
             "TO_left": "left_foot_index",
             "TO_right": "right_foot_index"
         }
-
+    
         for landmark_name, landmark in foot_landmarks.items():
             try:
                 forward_movement = pose_data[(landmark, 'z')] - pose_data[('sacrum', 'z')]
@@ -108,13 +114,13 @@ class EventDetector:
             except Exception as e:
                 logger.exception("Error computing forward movement for landmark %s: %s", landmark, str(e))
                 continue
-
+    
             try:
                 peaks, valleys = detect_extremas(forward_movement)
             except Exception as e:
                 logger.exception("Error detecting extremas for landmark %s: %s", landmark, str(e))
                 peaks, valleys = np.array([]), np.array([])
-
+    
             try:
                 all_extrema_data[landmark_name] = {
                     "peaks": peaks / self.frame_rate if peaks.size else peaks,
@@ -123,7 +129,7 @@ class EventDetector:
             except Exception as e:
                 logger.exception("Error converting extremas for landmark %s: %s", landmark, str(e))
                 all_extrema_data[landmark_name] = {"peaks": peaks, "valleys": valleys}
-            
+                
             try:
                 if "HS" in landmark_name:
                     idx = peaks  # Heel Strike
@@ -133,29 +139,21 @@ class EventDetector:
             except Exception as e:
                 logger.exception("Error converting indices for landmark %s: %s", landmark, str(e))
                 event_extrema_data[landmark_name] = np.array([])
-
-        # Automatic plotting is now disabled here.
-        # if self.make_plot:
-        #     if "TO_left" in all_forward_movement and "TO_right" in all_forward_movement:
-        #         plot_combined_extremas_and_toe(
-        #             all_forward_movement,
-        #             all_extrema_data,
-        #             self.frame_rate,
-        #             self.input_path,
-        #             output_dir=self.plots_dir
-        #         )
-       
+    
         try:
             max_length = max(len(v) for v in event_extrema_data.values() if isinstance(v, (list, np.ndarray)))
         except Exception as e:
             logger.exception("Error computing maximum length of events: %s", str(e))
             max_length = 0
-
+    
         try:
             events = pd.DataFrame({
                 key: pd.Series(list(values) + [np.nan] * (max_length - len(values)))
                 for key, values in event_extrema_data.items()
             })
+            # Log the detected event times for heel strikes.
+            logger.debug("Detected HS_left events: {}".format(events.get("HS_left")))
+            logger.debug("Detected HS_right events: {}".format(events.get("HS_right")))
         except Exception as e:
             logger.exception("Error creating events DataFrame: %s", str(e))
             events = pd.DataFrame()

@@ -1,4 +1,5 @@
 import pandas as pd
+import logging
 
 from modules.pose_estimation import PoseEstimator
 from modules.preprocessing import Preprocessor
@@ -17,6 +18,18 @@ class GaitPipeline:
         self.events = None
         self.gait_params = None
         self.fog_events = None  # Freezing of Gait events
+        
+        # Initialize a logger for this class
+        self.logger = logging.getLogger(__name__)
+        # Optionally, set the logging level and add handlers if needed
+        self.logger.setLevel(logging.DEBUG)
+        if not self.logger.hasHandlers():
+            ch = logging.StreamHandler()
+            ch.setLevel(logging.DEBUG)
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            ch.setFormatter(formatter)
+            self.logger.addHandler(ch)
+
     
     def load_input(self):
         if self.input_path.endswith(".csv"):
@@ -45,11 +58,27 @@ class GaitPipeline:
 
     def compute_gait_parameters(self):
         gait_params = GaitParameters()
-        # Pass frame_rate along with events and pose_data.
+        # Compute all gait parameters (including step lengths) as usual.
         self.gait_params = gait_params.compute_parameters(
             self.events, self.pose_data, self.frame_rate, save_path=self.save_parameters_path
         )
+        # Now, explicitly recompute step lengths with the correct pairing:
+        left_step_length = GaitParameters.compute_step_length(
+            self.events, self.pose_data, self.frame_rate, side="left", other_side="right"
+        )
+        right_step_length = GaitParameters.compute_step_length(
+            self.events, self.pose_data, self.frame_rate, side="right", other_side="left"
+        )
+        # Override the step_length columns with these values.
+        self.gait_params[("left", "step_length")] = left_step_length
+        self.gait_params[("right", "step_length")] = right_step_length
+    
+        # Log a few values to verify correct computation.
+        self.logger.debug("Recomputed left step length (first few values): %s", left_step_length.head())
+        self.logger.debug("Recomputed right step length (first few values): %s", right_step_length.head())
         return self.gait_params
+    
+
 
     def compute_forward_displacement(self):
         """

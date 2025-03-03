@@ -103,10 +103,7 @@ class FreezingDetector:
             
             mean_velocity = np.mean(np.abs(window_velocity))
             fi = self.compute_freeze_index(window_signal)
-            
-            # Debug logging for each window
-            logger.debug("Window %d-%d: mean_velocity=%.3f, FI=%.3f", start, end, mean_velocity, fi)
-            
+              
             # Conditions for suspecting a freeze:
             if mean_velocity < self.velocity_threshold and fi > self.fi_threshold:
                 if not in_freeze:
