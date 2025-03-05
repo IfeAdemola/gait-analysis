@@ -3,7 +3,7 @@ import os
 
 import pandas as pd
 
-from PoET.lib.patients import Patient, PatientCollection
+from .lib.patients import Patient, PatientCollection
 
 
 def construct_data(csv_files, fs, labels=None, scaling_factor=1, verbose=True, smooth=None):
