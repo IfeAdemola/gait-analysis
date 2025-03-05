@@ -41,8 +41,8 @@ def run_poet_analysis(video_path, config):
         hands=hands,
         output_folder=output_folder,
         make_csv=True,
-        make_video=False,
-        plot=False,
+        make_video=True,
+        plot=True,
         world_coords=True
     )
     

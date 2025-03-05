@@ -124,6 +124,7 @@ def main():
             logger.info("  %s", f)
 
 
+
 def process_single_file(input_file, output_dir, config, module):
     """
     Process a single file based on the selected module.
@@ -247,16 +248,25 @@ def process_single_file(input_file, output_dir, config, module):
             logger.error("Tremor analysis failed for %s", input_file)
             return None, input_file
 
-        video_name = os.path.splitext(os.path.basename(input_file))[0]
-        summary_df = pd.DataFrame({
-            'video_name': [video_name],
-            'dominant_tremor_frequency': [tremor_features.get('dominant_freq', None)],
-            'tremor_amplitude': [tremor_features.get('tremor_amplitude', None)],
-            'frame_rate': [tremor_features.get('frame_rate', None)],
-            'n_frames': [tremor_features.get('n_frames', None)]
-        })
-        logger.info("Processed %s; postural tremor analysis complete.", input_file)
-        return summary_df, None
+        # If tremor_features is a DataFrame, save all columns:
+        if isinstance(tremor_features, pd.DataFrame):
+            video_name = os.path.splitext(os.path.basename(input_file))[0]
+            tremor_features["video_name"] = video_name
+            summary_df = tremor_features.reset_index(drop=True)
+            logger.info("Processed %s; postural tremor analysis complete.", input_file)
+            return summary_df, None
+        else:
+            # If it returns a dictionary or something else, fall back to old approach:
+            video_name = os.path.splitext(os.path.basename(input_file))[0]
+            summary_df = pd.DataFrame({
+                'video_name': [video_name],
+                'dominant_tremor_frequency': [tremor_features.get('dominant_freq', None)],
+                'tremor_amplitude': [tremor_features.get('tremor_amplitude', None)],
+                'frame_rate': [tremor_features.get('frame_rate', None)],
+                'n_frames': [tremor_features.get('n_frames', None)]
+            })
+            logger.info("Processed %s; postural tremor analysis complete (dictionary fallback).", input_file)
+            return summary_df, None
 
     else:
         logger.error("Invalid module specified: %s", module)
