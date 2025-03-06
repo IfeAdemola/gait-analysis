@@ -7,17 +7,21 @@
   "pose_estimator": {
     "make_video": true,
     "make_csv": true,
-    "tracked_csv_dir": "tracked_csv",
-    "tracked_video_dir": "tracked_videos"
+    "plot": false,
+    "tracked_csv_dir": null,
+    "tracked_video_dir": null
   },
   "event_detection": {
     "algorithm": "zeni",
     "make_plot": true,
-    "plots_dir": "plots"
+    "plots_dir": null
   },
   "preprocessing": {
     "median_filter_window": 31,
     "normalization": true
+  },
+  "parameters_computer":{
+    "parameters_dir": null
   },
   "freezing": {
     "velocity_threshold": 0.05,
@@ -26,5 +30,5 @@
     "step_size_sec": 0.5
   },
   "visualize": false,
-  "analysis_module": "postural_tremor"
+  "analysis_module": "gait"
 }

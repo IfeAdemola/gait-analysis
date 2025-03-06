@@ -13,3 +13,4 @@ requests
 yolov5
 cython
 networkx
+ultralytics
