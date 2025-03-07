@@ -157,7 +157,7 @@ def process_single_file(input_file, output_dir, config, module):
 
     # Step 2: Branch by module selection
     if module == "gait":
-        # Run your existing gait analysis pipeline.
+        # gait analysis
         pipeline = GaitPipeline(
             input_path=input_file,
             config=config,

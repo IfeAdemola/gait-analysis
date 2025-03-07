@@ -4,13 +4,14 @@ import cv2  # Added for video writing
 import skvideo.io
 import mediapipe as mp
 import os
+import pandas as pd  # Added import for pandas
 from tqdm import tqdm
 
 from mediapipe.framework.formats import landmark_pb2
 from mediapipe import solutions
 
 from .mediapipe_landmarks import prepare_empty_dataframe
-# ^ Adjust this import if necessary
+
 
 def load_models(min_hand_detection_confidence=0.5,
                 min_tracking_confidence=0.5):
@@ -197,6 +198,9 @@ def track_video(video, pose, hands,
     
     if make_csv:
         csv_path = os.path.join(output_folder, f"{video_name}_MPtracked.csv")
+        # Flatten multi-index columns to single-level flat names:
+        if isinstance(marker_df.columns, pd.MultiIndex):
+            marker_df.columns = ['_'.join(col) for col in marker_df.columns]
         marker_df.to_csv(csv_path)
     
     if make_video:
