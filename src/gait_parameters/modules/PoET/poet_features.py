@@ -68,6 +68,21 @@ def normalize_multiindex_columns(df):
     print("Normalized column names:", df.columns.tolist())
     return df
 
+#############################################
+# Helper Function to Get Marker Columns
+#############################################
+def get_marker_columns(df, marker_name):
+    """
+    Returns available coordinate columns for a given marker.
+    It checks for 'x', 'y', and optionally 'z'. Returns a list of tuple keys.
+    """
+    coords = []
+    for axis in ['x', 'y', 'z']:
+        col = (marker_name, axis)
+        if col in df.columns:
+            coords.append(col)
+    return coords
+
 # ---------------------------
 # Data Loading and Time Period Assignment
 # ---------------------------
@@ -147,7 +162,7 @@ def butter_bandpass_filter(data, lowcut, highcut, fs, order=5):
 #####################################
 def pca_main_component(data):
     """
-    Perform PCA on a 2D array (n_samples x 3) and return the first principal component
+    Perform PCA on a 2D array (n_samples x d) and return the first principal component
     and the projection of the data onto that component.
     """
     data_centered = data - np.mean(data, axis=0)
@@ -156,12 +171,15 @@ def pca_main_component(data):
     projection = data_centered.dot(principal_component)
     return principal_component, projection
 
-def pca_tremor_analysis(signal_3d, fs):
+def pca_tremor_analysis(signal_data, fs):
     """
-    Given a 3D time series (n_samples x 3), perform PCA to find the main tremor axis,
-    then compute tremor features using the projected (1D) signal.
+    Given a time series (n_samples x d) where d can be 2 or 3,
+    perform PCA to find the main tremor axis, then compute tremor features using the projected (1D) signal.
     """
-    principal_component, projection = pca_main_component(signal_3d)
+    # Check dimensions: support 2D or 3D input.
+    if signal_data.shape[1] not in [2, 3]:
+        raise ValueError("Input signal must have 2 or 3 dimensions corresponding to coordinates.")
+    principal_component, projection = pca_main_component(signal_data)
     analytic_signal = hilbert(projection)
     inst_amplitude = np.abs(analytic_signal)
     max_hilbert_amp = inst_amplitude.max()
@@ -193,8 +211,8 @@ def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug
     """
     Extract proximal arm tremor features (shoulder and elbow markers) using PCA.
     Expects multi-index column names in the new format, e.g.:
-      ("right_shoulder", "x"), ("right_shoulder", "y"), ("right_shoulder", "z")
-      ("right_elbow", "x"), ("right_elbow", "y"), ("right_elbow", "z")
+      ("right_shoulder", "x"), ("right_shoulder", "y"), optionally ("right_shoulder", "z")
+      ("right_elbow", "x"), ("right_elbow", "y"), optionally ("right_elbow", "z")
       (and similarly for left side)
     """
     features_df = pd.DataFrame(index=pc.get_patient_ids())
@@ -223,24 +241,24 @@ def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug
         
         for hand in hands:
             if hand == 'right':
-                shoulder_cols = [("right_shoulder", "x"),
-                                 ("right_shoulder", "y"),
-                                 ("right_shoulder", "z")]
-                elbow_cols    = [("right_elbow", "x"),
-                                 ("right_elbow", "y"),
-                                 ("right_elbow", "z")]
+                shoulder_marker = "right_shoulder"
+                elbow_marker = "right_elbow"
             else:
-                shoulder_cols = [("left_shoulder", "x"),
-                                 ("left_shoulder", "y"),
-                                 ("left_shoulder", "z")]
-                elbow_cols    = [("left_elbow", "x"),
-                                 ("left_elbow", "y"),
-                                 ("left_elbow", "z")]
+                shoulder_marker = "left_shoulder"
+                elbow_marker = "left_elbow"
+            
+            shoulder_cols = get_marker_columns(structural_features, shoulder_marker)
+            elbow_cols = get_marker_columns(structural_features, elbow_marker)
             
             if debug:
                 print(f"Debug: For patient {p.patient_id}, processing {hand} hand.")
-                print(f"Debug: Expected shoulder columns: {shoulder_cols}")
-                print(f"Debug: Expected elbow columns: {elbow_cols}")
+                print(f"Debug: Available shoulder columns: {shoulder_cols}")
+                print(f"Debug: Available elbow columns: {elbow_cols}")
+            
+            # Ensure both markers have the same number of dimensions.
+            if len(shoulder_cols) == 0 or len(elbow_cols) == 0 or (len(shoulder_cols) != len(elbow_cols)):
+                print(f"Debug: Mismatch or missing coordinates for {hand} hand for patient {p.patient_id}. Skipping.")
+                continue
             
             # For time window calculation, use one representative column per marker.
             if time_periods and hand in time_periods and len(time_periods[hand]) > 0:
@@ -280,7 +298,7 @@ def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug
             centroid_detrended = np.apply_along_axis(signal.detrend, 0, centroid)
             
             filtered = np.zeros_like(centroid_detrended)
-            for i in range(3):
+            for i in range(centroid_detrended.shape[1]):
                 filtered[:, i] = butter_bandpass_filter(centroid_detrended[:, i], 3, 12, fs, order=5)
             
             features, projection, principal_component = pca_tremor_analysis(filtered, fs)
@@ -304,8 +322,9 @@ def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=D
     """
     Extract distal arm tremor features (elbow and wrist markers) using PCA.
     Expects multi-index column names in the new format, e.g.:
-      ("right_elbow", "x") and ("right_wrist", "x")
-      ("left_elbow", "x") and ("left_wrist", "x")
+      ("right_elbow", "x"), ("right_elbow", "y"), optionally ("right_elbow", "z")
+      ("right_wrist", "x"), ("right_wrist", "y"), optionally ("right_wrist", "z")
+      (and similarly for left side)
     """
     features_df = pd.DataFrame(index=pc.get_patient_ids())
     print('Extracting distal arm tremor features using PCA ... ')
@@ -333,24 +352,23 @@ def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=D
         
         for hand in hands:
             if hand == 'right':
-                elbow_cols = [("right_elbow", "x"),
-                              ("right_elbow", "y"),
-                              ("right_elbow", "z")]
-                wrist_cols = [("right_wrist", "x"),
-                              ("right_wrist", "y"),
-                              ("right_wrist", "z")]
+                elbow_marker = "right_elbow"
+                wrist_marker = "right_wrist"
             else:
-                elbow_cols = [("left_elbow", "x"),
-                              ("left_elbow", "y"),
-                              ("left_elbow", "z")]
-                wrist_cols = [("left_wrist", "x"),
-                              ("left_wrist", "y"),
-                              ("left_wrist", "z")]
+                elbow_marker = "left_elbow"
+                wrist_marker = "left_wrist"
+            
+            elbow_cols = get_marker_columns(structural_features, elbow_marker)
+            wrist_cols = get_marker_columns(structural_features, wrist_marker)
             
             if debug:
                 print(f"Debug: For patient {p.patient_id}, processing {hand} hand.")
-                print(f"Debug: Expected elbow columns: {elbow_cols}")
-                print(f"Debug: Expected wrist columns: {wrist_cols}")
+                print(f"Debug: Available elbow columns: {elbow_cols}")
+                print(f"Debug: Available wrist columns: {wrist_cols}")
+            
+            if len(elbow_cols) == 0 or len(wrist_cols) == 0 or (len(elbow_cols) != len(wrist_cols)):
+                print(f"Debug: Mismatch or missing coordinates for {hand} hand for patient {p.patient_id}. Skipping.")
+                continue
             
             if time_periods and hand in time_periods and len(time_periods[hand]) > 0:
                 key_names = [elbow_cols[0], wrist_cols[0]]
@@ -389,7 +407,7 @@ def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=D
             centroid_detrended = np.apply_along_axis(signal.detrend, 0, centroid)
             
             filtered = np.zeros_like(centroid_detrended)
-            for i in range(3):
+            for i in range(centroid_detrended.shape[1]):
                 filtered[:, i] = butter_bandpass_filter(centroid_detrended[:, i], 3, 12, fs, order=5)
             
             features, projection, principal_component = pca_tremor_analysis(filtered, fs)
@@ -413,8 +431,8 @@ def extract_fingers_tremor_features(pc, plot=False, save_plots=False, debug=DEBU
     """
     Extract fingers (index and middle finger) tremor features via PCA.
     Expects multi-index column names in the new format, e.g.:
-      ("index_finger_tip_right", "x"), ("index_finger_tip_right", "y"), ("index_finger_tip_right", "z")
-      ("middle_finger_tip_right", "x"), ("middle_finger_tip_right", "y"), ("middle_finger_tip_right", "z")
+      ("index_finger_tip_right", "x"), ("index_finger_tip_right", "y"), optionally ("index_finger_tip_right", "z")
+      ("middle_finger_tip_right", "x"), ("middle_finger_tip_right", "y"), optionally ("middle_finger_tip_right", "z")
       (and similarly for left hand)
     """
     features_df = pd.DataFrame(index=pc.get_patient_ids())
@@ -443,24 +461,23 @@ def extract_fingers_tremor_features(pc, plot=False, save_plots=False, debug=DEBU
         
         for hand in hands:
             if hand == 'right':
-                index_cols = [("index_finger_tip_right", "x"),
-                              ("index_finger_tip_right", "y"),
-                              ("index_finger_tip_right", "z")]
-                middle_cols = [("middle_finger_tip_right", "x"),
-                               ("middle_finger_tip_right", "y"),
-                               ("middle_finger_tip_right", "z")]
+                index_marker = "index_finger_tip_right"
+                middle_marker = "middle_finger_tip_right"
             else:
-                index_cols = [("index_finger_tip_left", "x"),
-                              ("index_finger_tip_left", "y"),
-                              ("index_finger_tip_left", "z")]
-                middle_cols = [("middle_finger_tip_left", "x"),
-                               ("middle_finger_tip_left", "y"),
-                               ("middle_finger_tip_left", "z")]
+                index_marker = "index_finger_tip_left"
+                middle_marker = "middle_finger_tip_left"
+            
+            index_cols = get_marker_columns(structural_features, index_marker)
+            middle_cols = get_marker_columns(structural_features, middle_marker)
             
             if debug:
                 print(f"Debug: For patient {p.patient_id}, processing {hand} hand.")
-                print(f"Debug: Expected index columns: {index_cols}")
-                print(f"Debug: Expected middle finger columns: {middle_cols}")
+                print(f"Debug: Available index finger columns: {index_cols}")
+                print(f"Debug: Available middle finger columns: {middle_cols}")
+            
+            if len(index_cols) == 0 or len(middle_cols) == 0 or (len(index_cols) != len(middle_cols)):
+                print(f"Debug: Mismatch or missing coordinates for {hand} hand for patient {p.patient_id}. Skipping.")
+                continue
             
             if time_periods and hand in time_periods and len(time_periods[hand]) > 0:
                 key_names = [index_cols[0], middle_cols[0]]
@@ -499,7 +516,7 @@ def extract_fingers_tremor_features(pc, plot=False, save_plots=False, debug=DEBU
             centroid_detrended = np.apply_along_axis(signal.detrend, 0, centroid)
             
             filtered = np.zeros_like(centroid_detrended)
-            for i in range(3):
+            for i in range(centroid_detrended.shape[1]):
                 filtered[:, i] = butter_bandpass_filter(centroid_detrended[:, i], 3, 12, fs, order=5)
             
             features, projection, principal_component = pca_tremor_analysis(filtered, fs)

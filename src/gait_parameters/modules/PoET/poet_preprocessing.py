@@ -9,30 +9,6 @@ def construct_data(csv_files, fs, labels=None, scaling_factor=1, verbose=True, s
     if isinstance(fs, int):
         fs = [fs] * len(csv_files)
 
-    # Define keypoint versions using normalized names (without the "marker_" prefix).
-    keypoint_versions = {
-        "v1": [
-            "index_finger_tip_left",
-            "index_finger_tip_right",
-            "middle_finger_tip_left",
-            "middle_finger_tip_right",
-            "left_elbow",
-            "right_elbow"
-        ],
-        "v2": [
-            "index_finger_tip_left",
-            "index_finger_tip_right",
-            "middle_finger_tip_left",
-            "middle_finger_tip_right",
-            "left_shoulder",
-            "right_shoulder",
-            "left_elbow",
-            "right_elbow",
-            "left_wrist",
-            "right_wrist"
-        ]
-    }
-    
     patients = []
     for i, file in enumerate(csv_files):
         # Get filename without extension.
@@ -51,31 +27,12 @@ def construct_data(csv_files, fs, labels=None, scaling_factor=1, verbose=True, s
         # Normalize the multi-index columns: lowercase all strings and remove "marker_" prefix if present.
         pose_estimation = normalize_multiindex_columns(pose_estimation)
         
-        # Get available keypoints from the first level of the MultiIndex.
-        available_keypoints = set(pose_estimation.columns.get_level_values(0))
-        
-        # Decide which version to use.
-        if all(kp in available_keypoints for kp in keypoint_versions["v2"]):
-            keypoints = keypoint_versions["v2"]
-            if verbose:
-                print(f"Using version v2 keypoints for {file_name}.")
-        elif all(kp in available_keypoints for kp in keypoint_versions["v1"]):
-            keypoints = keypoint_versions["v1"]
-            if verbose:
-                print(f"Using version v1 keypoints for {file_name}.")
-        else:
-            print(f"Error: Unknown keypoint version for {file_name}. Missing required keypoints.")
-            continue
-
-        # Subset to only the keypoint columns.
-        pose_estimation = pose_estimation.loc[:, pose_estimation.columns.get_level_values(0).isin(keypoints)]
-        
-        # Debug: Print first 2 rows of the processed pose_estimation.
+        # NOTE: Keypoint filtering has been removed so that all columns pass through.
         if verbose:
-            print("First 2 rows after normalizing and subsetting keypoints:")
+            print("First 2 rows after normalizing (all columns retained):")
             print(pose_estimation.head(2))
         
-        # Construct a Patient object.
+        # Construct a Patient object with the entire pose_estimation DataFrame.
         p = Patient(
             pose_estimation,
             fs[i],
