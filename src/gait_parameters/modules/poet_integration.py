@@ -128,7 +128,7 @@ def run_poet_analysis(video_path, config):
     pc = assign_hand_time_periods(pc)
     logger.info("Postprocessing complete.")
 
-    # 6) Feature extraction: compute tremor features.
+    # 6) Feature extraction: compute tremor features for proximal arm, distal arm, and fingers.
     logger.info("### ENTERING FEATURE EXTRACTION")
     from .PoET.poet_features import (
         extract_proximal_arm_tremor_features,
