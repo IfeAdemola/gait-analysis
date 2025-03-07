@@ -7,8 +7,10 @@ Author: Lange_L
 
 This script runs the full PoET pipeline (tracking → preprocessing → kinematics → feature extraction)
 on a single video file and returns tremor metrics.
-Note: The updated preprocessing step consolidates multi-column keypoints (e.g. keypoint_x, keypoint_y, keypoint_z)
-into single flat columns (e.g. keypoint) so that the downstream feature extraction code works as expected.
+
+Note: The preprocessing step now preserves the multi-index keypoint format 
+(e.g. columns with (keypoint, coordinate) tuples) so that the downstream feature extraction code works as expected.
+This version only supports the MultiIndex CSV format.
 """
 
 import os
@@ -24,6 +26,7 @@ logger = logging.getLogger(__name__)
 def run_poet_analysis(video_path, config):
     """
     Runs the PoET pipeline on a single video file and returns a DataFrame of tremor metrics.
+    This version only supports CSV tracking data with a MultiIndex header.
     """
     # Determine output folder for tracking results
     output_folder = config.get("poet_output_folder", "./tracking/")
@@ -50,6 +53,7 @@ def run_poet_analysis(video_path, config):
 
     # If tracking CSV is not available or invalid, run the tracking step.
     if track_data is None:
+        logger.info("### ENTERING TRACKING")
         from .PoET.poet_tracking import load_models, track_video
         hands, pose = load_models(
             min_hand_detection_confidence=config.get("min_hand_detection_confidence", 0.5),
@@ -68,17 +72,23 @@ def run_poet_analysis(video_path, config):
         )
     
     # After tracking (or if skipped), load the tracking CSV.
+    logger.info("### ENTERING PREPROCESSING")
     try:
         track_data = pd.read_csv(csv_path, header=[0, 1], index_col=0)
+        # Enforce that the CSV is in the expected MultiIndex format.
+        if not isinstance(track_data.columns, pd.MultiIndex):
+            logger.error("Tracking CSV for %s is not in the expected MultiIndex format. Please update your tracking data.", video_path)
+            return None
     except Exception as e:
         logger.error("Failed to read tracking CSV for %s: %s", video_path, str(e))
         return None
 
-    if track_data is None or track_data.empty:
+    if track_data.empty:
         logger.error("Tracking failed or returned empty data for %s", video_path)
         return None
 
     # 2) Frame Rate Extraction: use the robust FPS helper.
+    logger.info("### ENTERING FRAME RATE EXTRACTION")
     try:
         frame_rate = get_robust_fps(video_path, tolerance=0.1)
         logger.info("Extracted frame rate: %s FPS", frame_rate)
@@ -88,7 +98,7 @@ def run_poet_analysis(video_path, config):
         logger.info("Using fallback frame rate: %s FPS", frame_rate)
 
     # 3) Preprocessing: construct a PatientCollection using the tracking CSV.
-    # The updated construct_data function will consolidate keypoint columns.
+    logger.info("### STARTING PREPROCESSING")
     from .PoET.poet_preprocessing import construct_data
     pc = construct_data(
         csv_files=[csv_path],
@@ -101,19 +111,25 @@ def run_poet_analysis(video_path, config):
     if pc is None:
         logger.error("Preprocessing failed for %s", video_path)
         return None
+    logger.info("Preprocessing complete.")
 
     # 4) Kinematics: extract tremor-related signals.
+    logger.info("### ENTERING KINEMATIC ANALYSIS")
     from .PoET.poet_kinematics import extract_tremor
     pc = extract_tremor(pc)
     if pc is None:
         logger.error("Kinematics extraction failed for %s", video_path)
         return None
+    logger.info("Kinematic analysis complete.")
 
     # 5) Postprocessing: assign hand time periods.
+    logger.info("### ENTERING POSTPROCESSING")
     from .PoET.poet_features import assign_hand_time_periods
     pc = assign_hand_time_periods(pc)
-    
+    logger.info("Postprocessing complete.")
+
     # 6) Feature extraction: compute tremor features.
+    logger.info("### ENTERING FEATURE EXTRACTION")
     from .PoET.poet_features import (
         extract_proximal_arm_tremor_features,
         extract_distal_arm_tremor_features,
@@ -133,6 +149,7 @@ def run_poet_analysis(video_path, config):
     elif isinstance(tremor_features, pd.DataFrame):
         tremor_features['frame_rate'] = frame_rate
 
+    logger.info("### PIPELINE COMPLETE")
     return tremor_features
 
 if __name__ == "__main__":

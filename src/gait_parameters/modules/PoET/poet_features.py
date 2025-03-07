@@ -8,7 +8,7 @@ from scipy import ndimage
 from scipy.signal import medfilt, hilbert, butter, lfilter
 import matplotlib.pyplot as plt
 
-# Import local utilities (assumed to work with flat column names)
+# Import local utilities (assumed to work with multi-index column keys)
 from .poet_utils import identify_active_time_period, check_hand_, meanfilt
 from skimage.restoration import denoise_tv_chambolle
 
@@ -19,17 +19,69 @@ os.makedirs(PLOTS_DIR, exist_ok=True)
 # Global debug flag
 DEBUG = True
 
+#############################################
+# Helper Function to Normalize MultiIndex Columns
+#############################################
+def normalize_multiindex_columns(df):
+    """
+    Ensures that DataFrame columns are in a MultiIndex format.
+    If the columns are a single index (e.g. 'marker_index_finger_tip_left_x'),
+    they are converted to a MultiIndex of the form: ('marker_index_finger_tip_left', 'x').
+    
+    Then, the function prints out the first row and the column names, checks whether
+    the first-level keys start with 'marker_' and, if so, removes the prefix.
+    """
+    # Convert to MultiIndex if necessary.
+    if not isinstance(df.columns, pd.MultiIndex):
+        new_cols = []
+        for col in df.columns:
+            parts = col.rsplit("_", 1)
+            if len(parts) == 2:
+                new_cols.append(tuple(parts))
+            else:
+                new_cols.append((col, ""))
+        df.columns = pd.MultiIndex.from_tuples(new_cols)
+    
+    # Output the first row and the column names for inspection.
+    print("First row of the DataFrame:")
+    print(df.head(1))
+    print("Original column names:", df.columns.tolist())
+    
+    # Check if any first-level column key starts with "marker_"
+    new_cols = []
+    prefix_found = False
+    for col in df.columns:
+        first_level = col[0]
+        if first_level.startswith("marker_"):
+            prefix_found = True
+            # Remove the "marker_" prefix.
+            new_first = first_level[len("marker_"):]
+        else:
+            new_first = first_level
+        new_cols.append((new_first,) + col[1:])
+    
+    if prefix_found:
+        print("Detected 'marker_' prefix in column names. Removing prefix for consistency.")
+        df.columns = pd.MultiIndex.from_tuples(new_cols)
+    else:
+        print("No 'marker_' prefix detected. Proceeding with current column names.")
+    print("Normalized column names:", df.columns.tolist())
+    return df
+
 # ---------------------------
 # Data Loading and Time Period Assignment
 # ---------------------------
 def assign_hand_time_periods(pc):
     """
-    Loop over patients and assign active time periods based on the flat column structure.
-    Assumes that p.structural_features already has preformatted column names.
+    Loop over patients and assign active time periods.
+    This function normalizes p.structural_features to ensure MultiIndex format
+    with the legacy 'marker_' prefix removed.
     """
     print('Extracting active time periods of hands ... ')
     for p in tqdm(pc.patients, total=len(pc.patients)):
         fs = p.sampling_frequency
+        if p.structural_features is not None:
+            p.structural_features = normalize_multiindex_columns(p.structural_features)
         if DEBUG:
             if p.structural_features is None or p.structural_features.empty:
                 print(f"Debug: Structural features for patient {p.patient_id} not found (empty DataFrame).")
@@ -135,16 +187,15 @@ def pca_tremor_analysis(signal_3d, fs):
     return features, projection, principal_component
 
 ###############################################
-# New Tremor Feature Extraction Functions (using flat column names)
+# Updated Tremor Feature Extraction Functions (using normalized multi-index column keys)
 ###############################################
 def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug=DEBUG):
     """
     Extract proximal arm tremor features (shoulder and elbow markers) using PCA.
-    Uses flat, preformatted column names.
-    Expected columns (for right hand):
-        marker_right_shoulder_x, marker_right_shoulder_y, marker_right_shoulder_z,
-        marker_right_elbow_x, marker_right_elbow_y, marker_right_elbow_z
-    and similarly for left hand.
+    Expects multi-index column names in the new format, e.g.:
+      ("right_shoulder", "x"), ("right_shoulder", "y"), ("right_shoulder", "z")
+      ("right_elbow", "x"), ("right_elbow", "y"), ("right_elbow", "z")
+      (and similarly for left side)
     """
     features_df = pd.DataFrame(index=pc.get_patient_ids())
     print('Extracting proximal arm tremor features using PCA ... ')
@@ -152,7 +203,8 @@ def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug
     for p in tqdm(pc.patients, total=len(pc.patients)):
         fs = p.sampling_frequency
         hands = check_hand_(p)
-        structural_features = p.structural_features
+        # Normalize structural_features to ensure MultiIndex and remove legacy marker_ prefix if present.
+        structural_features = normalize_multiindex_columns(p.structural_features)
         
         if debug:
             if structural_features is None or structural_features.empty:
@@ -171,18 +223,26 @@ def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug
         
         for hand in hands:
             if hand == 'right':
-                shoulder_cols = ['marker_right_shoulder_x', 'marker_right_shoulder_y', 'marker_right_shoulder_z']
-                elbow_cols    = ['marker_right_elbow_x', 'marker_right_elbow_y', 'marker_right_elbow_z']
+                shoulder_cols = [("right_shoulder", "x"),
+                                 ("right_shoulder", "y"),
+                                 ("right_shoulder", "z")]
+                elbow_cols    = [("right_elbow", "x"),
+                                 ("right_elbow", "y"),
+                                 ("right_elbow", "z")]
             else:
-                shoulder_cols = ['marker_left_shoulder_x', 'marker_left_shoulder_y', 'marker_left_shoulder_z']
-                elbow_cols    = ['marker_left_elbow_x', 'marker_left_elbow_y', 'marker_left_elbow_z']
+                shoulder_cols = [("left_shoulder", "x"),
+                                 ("left_shoulder", "y"),
+                                 ("left_shoulder", "z")]
+                elbow_cols    = [("left_elbow", "x"),
+                                 ("left_elbow", "y"),
+                                 ("left_elbow", "z")]
             
             if debug:
                 print(f"Debug: For patient {p.patient_id}, processing {hand} hand.")
                 print(f"Debug: Expected shoulder columns: {shoulder_cols}")
                 print(f"Debug: Expected elbow columns: {elbow_cols}")
             
-            # For time window calculation, use one representative column per marker
+            # For time window calculation, use one representative column per marker.
             if time_periods and hand in time_periods and len(time_periods[hand]) > 0:
                 key_names = [shoulder_cols[0], elbow_cols[0]]
                 start_frame = min([time_periods[hand].get(key, [0, 0])[0] for key in key_names])
@@ -243,11 +303,9 @@ def extract_proximal_arm_tremor_features(pc, plot=False, save_plots=False, debug
 def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=DEBUG):
     """
     Extract distal arm tremor features (elbow and wrist markers) using PCA.
-    Uses flat, preformatted column names.
-    Expected columns for right hand:
-        marker_right_elbow_x, marker_right_elbow_y, marker_right_elbow_z,
-        marker_right_wrist_x, marker_right_wrist_y, marker_right_wrist_z
-    and similarly for left hand.
+    Expects multi-index column names in the new format, e.g.:
+      ("right_elbow", "x") and ("right_wrist", "x")
+      ("left_elbow", "x") and ("left_wrist", "x")
     """
     features_df = pd.DataFrame(index=pc.get_patient_ids())
     print('Extracting distal arm tremor features using PCA ... ')
@@ -255,7 +313,8 @@ def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=D
     for p in tqdm(pc.patients, total=len(pc.patients)):
         fs = p.sampling_frequency
         hands = check_hand_(p)
-        structural_features = p.structural_features
+        # Normalize structural_features.
+        structural_features = normalize_multiindex_columns(p.structural_features)
         
         if debug:
             if structural_features is None or structural_features.empty:
@@ -274,18 +333,25 @@ def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=D
         
         for hand in hands:
             if hand == 'right':
-                elbow_cols = ['marker_right_elbow_x', 'marker_right_elbow_y', 'marker_right_elbow_z']
-                wrist_cols = ['marker_right_wrist_x', 'marker_right_wrist_y', 'marker_right_wrist_z']
+                elbow_cols = [("right_elbow", "x"),
+                              ("right_elbow", "y"),
+                              ("right_elbow", "z")]
+                wrist_cols = [("right_wrist", "x"),
+                              ("right_wrist", "y"),
+                              ("right_wrist", "z")]
             else:
-                elbow_cols = ['marker_left_elbow_x', 'marker_left_elbow_y', 'marker_left_elbow_z']
-                wrist_cols = ['marker_left_wrist_x', 'marker_left_wrist_y', 'marker_left_wrist_z']
+                elbow_cols = [("left_elbow", "x"),
+                              ("left_elbow", "y"),
+                              ("left_elbow", "z")]
+                wrist_cols = [("left_wrist", "x"),
+                              ("left_wrist", "y"),
+                              ("left_wrist", "z")]
             
             if debug:
                 print(f"Debug: For patient {p.patient_id}, processing {hand} hand.")
                 print(f"Debug: Expected elbow columns: {elbow_cols}")
                 print(f"Debug: Expected wrist columns: {wrist_cols}")
             
-            # Use a representative column from each marker for the time window
             if time_periods and hand in time_periods and len(time_periods[hand]) > 0:
                 key_names = [elbow_cols[0], wrist_cols[0]]
                 start_frame = min([time_periods[hand].get(key, [0, 0])[0] for key in key_names])
@@ -346,11 +412,10 @@ def extract_distal_arm_tremor_features(pc, plot=False, save_plots=False, debug=D
 def extract_fingers_tremor_features(pc, plot=False, save_plots=False, debug=DEBUG):
     """
     Extract fingers (index and middle finger) tremor features via PCA.
-    Uses flat, preformatted column names.
-    Expected columns for right hand:
-        marker_index_finger_tip_right_x, marker_index_finger_tip_right_y, marker_index_finger_tip_right_z,
-        marker_middle_finger_tip_right_x, marker_middle_finger_tip_right_y, marker_middle_finger_tip_right_z
-    and similarly for left hand.
+    Expects multi-index column names in the new format, e.g.:
+      ("index_finger_tip_right", "x"), ("index_finger_tip_right", "y"), ("index_finger_tip_right", "z")
+      ("middle_finger_tip_right", "x"), ("middle_finger_tip_right", "y"), ("middle_finger_tip_right", "z")
+      (and similarly for left hand)
     """
     features_df = pd.DataFrame(index=pc.get_patient_ids())
     print('Extracting fingers/hands tremor features using PCA ... ')
@@ -358,7 +423,8 @@ def extract_fingers_tremor_features(pc, plot=False, save_plots=False, debug=DEBU
     for p in tqdm(pc.patients, total=len(pc.patients)):
         fs = p.sampling_frequency
         hands = check_hand_(p)
-        structural_features = p.structural_features
+        # Normalize structural_features.
+        structural_features = normalize_multiindex_columns(p.structural_features)
         
         if debug:
             if structural_features is None or structural_features.empty:
@@ -377,18 +443,25 @@ def extract_fingers_tremor_features(pc, plot=False, save_plots=False, debug=DEBU
         
         for hand in hands:
             if hand == 'right':
-                index_cols = ['marker_index_finger_tip_right_x', 'marker_index_finger_tip_right_y', 'marker_index_finger_tip_right_z']
-                middle_cols = ['marker_middle_finger_tip_right_x', 'marker_middle_finger_tip_right_y', 'marker_middle_finger_tip_right_z']
+                index_cols = [("index_finger_tip_right", "x"),
+                              ("index_finger_tip_right", "y"),
+                              ("index_finger_tip_right", "z")]
+                middle_cols = [("middle_finger_tip_right", "x"),
+                               ("middle_finger_tip_right", "y"),
+                               ("middle_finger_tip_right", "z")]
             else:
-                index_cols = ['marker_index_finger_tip_left_x', 'marker_index_finger_tip_left_y', 'marker_index_finger_tip_left_z']
-                middle_cols = ['marker_middle_finger_tip_left_x', 'marker_middle_finger_tip_left_y', 'marker_middle_finger_tip_left_z']
+                index_cols = [("index_finger_tip_left", "x"),
+                              ("index_finger_tip_left", "y"),
+                              ("index_finger_tip_left", "z")]
+                middle_cols = [("middle_finger_tip_left", "x"),
+                               ("middle_finger_tip_left", "y"),
+                               ("middle_finger_tip_left", "z")]
             
             if debug:
                 print(f"Debug: For patient {p.patient_id}, processing {hand} hand.")
                 print(f"Debug: Expected index columns: {index_cols}")
                 print(f"Debug: Expected middle finger columns: {middle_cols}")
             
-            # Use a representative column for time window calculation
             if time_periods and hand in time_periods and len(time_periods[hand]) > 0:
                 key_names = [index_cols[0], middle_cols[0]]
                 start_frame = min([time_periods[hand].get(key, [0, 0])[0] for key in key_names])

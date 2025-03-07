@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import cv2  # Added for video writing
+import cv2  # For video writing
 import skvideo.io
 import mediapipe as mp
 import os
-import pandas as pd  # Added import for pandas
+import pandas as pd
 from tqdm import tqdm
 
 from mediapipe.framework.formats import landmark_pb2
@@ -15,7 +15,10 @@ from .mediapipe_landmarks import prepare_empty_dataframe
 
 def load_models(min_hand_detection_confidence=0.5,
                 min_tracking_confidence=0.5):
-    # Use relative paths to locate the model files in the 'models' subfolder
+    """
+    Load the hand and pose models using MediaPipe.
+    Only the MultiIndex format is supported downstream.
+    """
     CURRENT_DIR = os.path.dirname(__file__)
     HAND_MODEL = os.path.join(CURRENT_DIR, 'models', 'poet_hand_landmarker.task')
     POSE_MODEL = os.path.join(CURRENT_DIR, 'models', 'poet_pose_landmarker_full.task')
@@ -55,15 +58,18 @@ def track_video_list(video_list,
                      verbose=True, 
                      make_csv=True, 
                      make_video=True, 
-                     world_coords=False,
+                     world_coords=True,
                      min_tracking_confidence=0.7,
                      min_hand_detection_confidence=0.5):
-    
+    """
+    Processes a list of videos and performs tracking on each,
+    saving outputs only in the MultiIndex format.
+    """
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
     
     for i, video in enumerate(video_list):
-        # Reload models on each iteration (reset timestamp)
+        # Reload models on each iteration (to reset timestamps)
         hands, pose = load_models(
             min_hand_detection_confidence=min_hand_detection_confidence,
             min_tracking_confidence=min_tracking_confidence
@@ -77,7 +83,7 @@ def track_video_list(video_list,
         csv_path = os.path.join(output_folder, f"{video_name}_MPtracked.csv")
         if not overwrite and os.path.isfile(csv_path):
             if verbose:
-                print('CSV file already made - skipping this video.')
+                print('CSV file already exists - skipping this video.')
             continue
         
         track_video(
@@ -99,7 +105,10 @@ def track_video(video, pose, hands,
                 make_video=False,
                 plot=False,
                 world_coords=True):
-    
+    """
+    Processes a single video for tracking and saves the output CSV and optionally an annotated video.
+    This function only supports data with a MultiIndex column structure.
+    """
     print(video)
     video_name = os.path.basename(video).split('.')[0]
     
@@ -131,10 +140,11 @@ def track_video(video, pose, hands,
     
     writer_path = os.path.join(output_folder, f"{video_name}_MPtracked.mp4")
     
-    # Initialize cv2.VideoWriter instead of skvideo.io.FFmpegWriter
+    # Initialize cv2.VideoWriter to save the annotated video
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     writer = cv2.VideoWriter(writer_path, fourcc, fps, (frame_width, frame_height))
     
+    # Create an empty DataFrame with MultiIndex columns
     marker_df, marker_mapping = prepare_empty_dataframe(hands='both', pose=True)
     
     for i, image in enumerate(tqdm(videogen, total=len(videogen))):
@@ -142,18 +152,19 @@ def track_video(video, pose, hands,
         # Calculate timestamp in milliseconds for the current frame
         frame_ms = int((i / fps) * 1000)
         
-        # Mediapipe predictions
+        # Perform Mediapipe predictions
         results_hands = hands.detect_for_video(mp_image, frame_ms)
         results_pose = pose.detect_for_video(mp_image, frame_ms)
         
         annotated_image = image.copy()
         
+        # Determine image dimensions based on coordinate type
         if world_coords:
             img_h, img_w = (1, 1)
         else:
             img_h, img_w = image.shape[:2]
 
-        # Pose
+        # Process pose landmarks
         if results_pose.pose_world_landmarks:
             annotated_image = draw_pose_landmarks_on_image(annotated_image, results_pose)
             
@@ -170,7 +181,7 @@ def track_video(video, pose, hands,
                 marker_df.loc[i, (marker, 'visibility')] = landmark.visibility
                 marker_df.loc[i, (marker, 'presence')] = landmark.presence
 
-        # Hands
+        # Process hand landmarks
         if results_hands.hand_landmarks:
             annotated_image = draw_hand_landmarks_on_image(annotated_image, results_hands)
             
@@ -198,9 +209,9 @@ def track_video(video, pose, hands,
     
     if make_csv:
         csv_path = os.path.join(output_folder, f"{video_name}_MPtracked.csv")
-        # Flatten multi-index columns to single-level flat names:
-        if isinstance(marker_df.columns, pd.MultiIndex):
-            marker_df.columns = ['_'.join(col) for col in marker_df.columns]
+        # Ensure the DataFrame has a MultiIndex before saving
+        if not isinstance(marker_df.columns, pd.MultiIndex):
+            raise ValueError("The marker dataframe does not have a MultiIndex. This script only supports MultiIndex data.")
         marker_df.to_csv(csv_path)
     
     if make_video:
@@ -209,6 +220,9 @@ def track_video(video, pose, hands,
 
 
 def draw_pose_landmarks_on_image(rgb_image, detection_result):
+    """
+    Annotate the image with pose landmarks.
+    """
     pose_landmarks_list = detection_result.pose_landmarks
     annotated_image = np.copy(rgb_image)
     
@@ -230,6 +244,9 @@ def draw_pose_landmarks_on_image(rgb_image, detection_result):
 
 
 def draw_hand_landmarks_on_image(rgb_image, detection_result):
+    """
+    Annotate the image with hand landmarks.
+    """
     hand_landmarks_list = detection_result.hand_landmarks
     annotated_image = np.copy(rgb_image)
     
@@ -251,6 +268,9 @@ def draw_hand_landmarks_on_image(rgb_image, detection_result):
 
 
 def draw_face_landmarks_on_image(rgb_image, detection_result):
+    """
+    Annotate the image with face landmarks.
+    """
     face_landmarks_list = detection_result.face_landmarks
     annotated_image = np.copy(rgb_image)
     
@@ -268,23 +288,20 @@ def draw_face_landmarks_on_image(rgb_image, detection_result):
             landmark_list=face_landmarks_proto,
             connections=mp.solutions.face_mesh.FACEMESH_TESSELATION,
             landmark_drawing_spec=None,
-            connection_drawing_spec=mp.solutions.drawing_styles
-              .get_default_face_mesh_tesselation_style()
+            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_tesselation_style()
         )
         solutions.drawing_utils.draw_landmarks(
             image=annotated_image,
             landmark_list=face_landmarks_proto,
             connections=mp.solutions.face_mesh.FACEMESH_CONTOURS,
             landmark_drawing_spec=None,
-            connection_drawing_spec=mp.solutions.drawing_styles
-              .get_default_face_mesh_contours_style()
+            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_contours_style()
         )
         solutions.drawing_utils.draw_landmarks(
             image=annotated_image,
             landmark_list=face_landmarks_proto,
             connections=mp.solutions.face_mesh.FACEMESH_IRISES,
             landmark_drawing_spec=None,
-            connection_drawing_spec=mp.solutions.drawing_styles
-              .get_default_face_mesh_iris_connections_style()
+            connection_drawing_spec=mp.solutions.drawing_styles.get_default_face_mesh_iris_connections_style()
         )
     return annotated_image

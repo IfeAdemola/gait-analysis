@@ -9,6 +9,30 @@ def construct_data(csv_files, fs, labels=None, scaling_factor=1, verbose=True, s
     if isinstance(fs, int):
         fs = [fs] * len(csv_files)
 
+    # Define keypoint versions using normalized names (without the "marker_" prefix).
+    keypoint_versions = {
+        "v1": [
+            "index_finger_tip_left",
+            "index_finger_tip_right",
+            "middle_finger_tip_left",
+            "middle_finger_tip_right",
+            "left_elbow",
+            "right_elbow"
+        ],
+        "v2": [
+            "index_finger_tip_left",
+            "index_finger_tip_right",
+            "middle_finger_tip_left",
+            "middle_finger_tip_right",
+            "left_shoulder",
+            "right_shoulder",
+            "left_elbow",
+            "right_elbow",
+            "left_wrist",
+            "right_wrist"
+        ]
+    }
+    
     patients = []
     for i, file in enumerate(csv_files):
         # Get filename without extension.
@@ -17,38 +41,41 @@ def construct_data(csv_files, fs, labels=None, scaling_factor=1, verbose=True, s
         if verbose:
             print('Loading: {}'.format(file_name))
         
-        # Load the CSV file.
-        pose_estimation = pd.read_csv(file, header=0, index_col=0)
+        # Load the CSV file with a multi-index header.
+        pose_estimation = pd.read_csv(file, header=[0, 1], index_col=0)
         
-        # Flatten multi-index columns and convert to lowercase.
-        pose_estimation = flatten_columns(pose_estimation)
+        # Enforce that the CSV has a MultiIndex header.
+        if not isinstance(pose_estimation.columns, pd.MultiIndex):
+            raise ValueError(f"CSV file {file_name} does not have a MultiIndex header. Please update your CSV generation process.")
         
-        # Define the keypoints we need to consolidate.
-        keypoints = [
-            "index_finger_tip_left",
-            "index_finger_tip_right",
-            "middle_finger_tip_left",
-            "middle_finger_tip_right",
-            "left_elbow",
-            "right_elbow"
-        ]
+        # Normalize the multi-index columns: lowercase all strings and remove "marker_" prefix if present.
+        pose_estimation = normalize_multiindex_columns(pose_estimation)
         
-        # Consolidate coordinate columns into single columns.
-        pose_estimation = flatten_and_consolidate_keypoints(pose_estimation, keypoints)
+        # Get available keypoints from the first level of the MultiIndex.
+        available_keypoints = set(pose_estimation.columns.get_level_values(0))
         
-        # Debug: Print first 2 rows of the processed pose_estimation
-        if verbose:
-            print("First 2 rows after flattening and consolidating keypoints:")
-            print(pose_estimation.head(2))
-        
-        # Subset to only the consolidated keypoint columns.
-        try:
-            pose_estimation = pose_estimation[keypoints]
-        except KeyError as e:
-            print(f"Error: One or more expected keypoint columns are missing for {file_name}: {e}")
+        # Decide which version to use.
+        if all(kp in available_keypoints for kp in keypoint_versions["v2"]):
+            keypoints = keypoint_versions["v2"]
+            if verbose:
+                print(f"Using version v2 keypoints for {file_name}.")
+        elif all(kp in available_keypoints for kp in keypoint_versions["v1"]):
+            keypoints = keypoint_versions["v1"]
+            if verbose:
+                print(f"Using version v1 keypoints for {file_name}.")
+        else:
+            print(f"Error: Unknown keypoint version for {file_name}. Missing required keypoints.")
             continue
 
-        # Construct a patient object.
+        # Subset to only the keypoint columns.
+        pose_estimation = pose_estimation.loc[:, pose_estimation.columns.get_level_values(0).isin(keypoints)]
+        
+        # Debug: Print first 2 rows of the processed pose_estimation.
+        if verbose:
+            print("First 2 rows after normalizing and subsetting keypoints:")
+            print(pose_estimation.head(2))
+        
+        # Construct a Patient object.
         p = Patient(
             pose_estimation,
             fs[i],
@@ -73,34 +100,23 @@ def construct_data(csv_files, fs, labels=None, scaling_factor=1, verbose=True, s
     return pc
 
 
-def flatten_columns(data):
-    new_cols = []
-    for col in data.columns.values:
-        # Only join if the column is a tuple (i.e., multi-index)
-        if isinstance(col, tuple):
-            new_col = '_'.join([str(x).strip() for x in col if str(x).strip() != '']).lower()
-        else:
-            new_col = str(col).lower()
-        new_cols.append(new_col)
-    data.columns = new_cols
+def normalize_multiindex_columns(data):
+    """
+    Enforces that data.columns is a MultiIndex. Converts all elements of the MultiIndex to lowercase strings.
+    If the first-level element starts with "marker_", that prefix is removed.
+    This normalization ensures that downstream processing uses the new standardized keypoint names.
+    """
+    if not isinstance(data.columns, pd.MultiIndex):
+        raise ValueError("Expected data.columns to be a MultiIndex. Received: {}".format(type(data.columns)))
+    
+    new_tuples = []
+    for tup in data.columns:
+        # Process the first element: remove "marker_" prefix if present, then lowercase.
+        first = str(tup[0]).strip().lower()
+        if first.startswith("marker_"):
+            first = first[len("marker_"):]
+        # Process the rest of the tuple elements.
+        rest = tuple(str(x).strip().lower() for x in tup[1:])
+        new_tuples.append((first,) + rest)
+    data.columns = pd.MultiIndex.from_tuples(new_tuples)
     return data
-
-
-def flatten_and_consolidate_keypoints(df, keypoints):
-    """
-    For each keypoint in the list, consolidate its x, y, and z coordinate columns into a single column.
-    The function expects the coordinate columns to be named in the flattened format, e.g.:
-        "index_finger_tip_left_x", "index_finger_tip_left_y", "index_finger_tip_left_z"
-    It creates a new column with the keypoint base name (e.g. "index_finger_tip_left")
-    that contains a list of the three coordinates for each row.
-    """
-    for kp in keypoints:
-        x_col = f"{kp}_x"
-        y_col = f"{kp}_y"
-        z_col = f"{kp}_z"
-        if {x_col, y_col, z_col}.issubset(set(df.columns)):
-            # Combine the three coordinate columns into a list for each row.
-            df[kp] = df[[x_col, y_col, z_col]].values.tolist()
-        else:
-            print(f"Warning: Missing columns for keypoint '{kp}'. Expected: {x_col}, {y_col}, {z_col}.")
-    return df

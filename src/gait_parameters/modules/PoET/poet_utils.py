@@ -47,27 +47,31 @@ def rle(inarray):
     
 
 def identify_active_time_period(structural_features, fs):
+    time_periods = {'left': {}, 'right': {}}
     
-    time_periods = {'left':{}, 'right':{}}
-    
+    # Remove a 'time' column if present.
     if 'time' in structural_features.columns:
-        structural_features = structural_features.drop('time',axis=1)
+        structural_features = structural_features.drop('time', axis=1)
     
+    def col_contains_hand(col, hand):
+        # If col is a tuple, check if hand is in its first element.
+        if isinstance(col, tuple):
+            return hand in col[0]
+        # Otherwise, assume col is a string.
+        return hand in col
+
     for hand in time_periods.keys():
-        features = [f for f in structural_features.columns if hand in f]
+        # Use the helper function in the list comprehension.
+        features = [col for col in structural_features.columns if col_contains_hand(col, hand)]
         
         for feat in features:
-            
-            if not structural_features.loc[:,feat].isna().any():
-            
-                amplitudes, frequencies = compute_spectrogram(structural_features.loc[:,feat], fs)
-                spectrogram = np.vstack(amplitudes).T
-                
-                above_threshold = spectrogram.mean(axis=0) > np.median(spectrogram)
+            if not structural_features.loc[:, feat].isna().any():
+                amplitudes, frequencies = compute_spectrogram(structural_features.loc[:, feat], fs)
+                spectrogram_data = np.vstack(amplitudes).T
+                above_threshold = spectrogram_data.mean(axis=0) > np.median(spectrogram_data)
                 frame_start, frame_end = rle(above_threshold)
-            
-                time_periods[hand][feat] = (frame_start, frame_end)        
-            
+                time_periods[hand][feat] = (frame_start, frame_end)
+                
     return time_periods
 
 
@@ -94,7 +98,7 @@ def compute_spectrogram(x, fs, min_freq=0, max_freq=100):
         frequency = frequency[freq_limits]        
         
         amplitudes.append(amplitude)
-        frequencies.append(frequencies)
+        frequencies.append(frequency)
         
     return amplitudes, frequencies
 
