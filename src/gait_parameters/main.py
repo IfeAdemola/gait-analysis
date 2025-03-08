@@ -71,7 +71,8 @@ def main():
     output_dir = get_external_folder("Output", project_root, config["output_dir"])
 
     # Update paths for output subdirectories from config using the resolved output_dir
-    config["gait_parameters"]["save_path"] = os.path.join(output_dir, config["gait_parameters"]["save_path"])
+    # Rename gait_parameters folder to "Kinematic_Features"
+    config["gait_parameters"]["save_path"] = os.path.join(output_dir, "kinematic_features")
     config["pose_estimator"]["tracked_csv_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_csv_dir"])
     config["pose_estimator"]["tracked_video_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_video_dir"])
     config["event_detection"]["plots_dir"] = os.path.join(output_dir, config["event_detection"]["plots_dir"])
@@ -122,7 +123,6 @@ def main():
         logger.info("The following files were skipped:")
         for f in skipped_files:
             logger.info("  %s", f)
-
 
 
 def process_single_file(input_file, output_dir, config, module):
@@ -235,6 +235,7 @@ def process_single_file(input_file, output_dir, config, module):
         summary_df['fog_count'] = fog_count
         summary_df['fog_total_duration_sec'] = fog_total_duration
 
+        # Reorder columns to ensure video_name is first
         columns = ['video_name'] + [col for col in summary_df.columns if col != 'video_name']
         summary_df = summary_df[columns]
         logger.info("Processed %s; gait analysis complete.", input_file)
@@ -249,15 +250,18 @@ def process_single_file(input_file, output_dir, config, module):
             return None, input_file
 
         # If tremor_features is a DataFrame, save all columns:
+        video_name = os.path.splitext(os.path.basename(input_file))[0]
         if isinstance(tremor_features, pd.DataFrame):
-            video_name = os.path.splitext(os.path.basename(input_file))[0]
             tremor_features["video_name"] = video_name
             summary_df = tremor_features.reset_index(drop=True)
+            # Ensure video_name column is the first column
+            if 'video_name' in summary_df.columns:
+                columns = ['video_name'] + [col for col in summary_df.columns if col != 'video_name']
+                summary_df = summary_df[columns]
             logger.info("Processed %s; postural tremor analysis complete.", input_file)
             return summary_df, None
         else:
             # If it returns a dictionary or something else, fall back to old approach:
-            video_name = os.path.splitext(os.path.basename(input_file))[0]
             summary_df = pd.DataFrame({
                 'video_name': [video_name],
                 'dominant_tremor_frequency': [tremor_features.get('dominant_freq', None)],
