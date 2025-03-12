@@ -5,8 +5,9 @@ import pandas as pd
 import logging
 import warnings
 
-from my_utils.helpers import save_csv
-from gait_pipeline import GaitPipeline  # your existing gait pipeline
+from pathlib import Path
+from my_utils.helpers import save_csv, compute_and_save_summary, load_json, get_file_root, get_repo_root, get_project_root
+from gait_pipeline import GaitPipeline  
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -15,43 +16,33 @@ logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 
-def load_config(config_path):
-    with open(config_path, 'r') as f:
-        return json.load(f)
 
 
-def get_project_root():
-    """
-    Returns the absolute path two levels above this file.
-    """
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-
-
-def get_external_folder(external_name, project_root, fallback_relative):
-    """
-    For the "Output" folder: always use the external folder (one level above the project)
-    with the given name. If it doesn't exist, create it.
+# def get_external_folder(external_name, project_root, fallback_relative):
+#     """
+#     For the "Output" folder: always use the external folder (one level above the project)
+#     with the given name. If it doesn't exist, create it.
     
-    For other folders (e.g., "Data"), use the external folder if it exists; otherwise,
-    fall back to the relative folder provided.
-    """
-    parent_dir = os.path.abspath(os.path.join(project_root, ".."))
-    external_path = os.path.join(parent_dir, external_name)
-    if external_name == "Output":
-        if not os.path.isdir(external_path):
-            logger.info("External %s folder not found. Creating folder: %s", external_name, external_path)
-            os.makedirs(external_path, exist_ok=True)
-        else:
-            logger.info("Using external %s folder: %s", external_name, external_path)
-        return external_path
-    else:
-        if os.path.isdir(external_path):
-            logger.info("Using external %s folder: %s", external_name, external_path)
-            return external_path
-        else:
-            fallback = os.path.join(project_root, fallback_relative)
-            logger.info("External %s folder not found. Using internal folder: %s", external_name, fallback)
-            return fallback
+#     For other folders (e.g., "Data"), use the external folder if it exists; otherwise,
+#     fall back to the relative folder provided.
+#     """
+#     parent_dir = os.path.abspath(os.path.join(project_root, ".."))
+#     external_path = os.path.join(parent_dir, external_name)
+#     if external_name == "Output":
+#         if not os.path.isdir(external_path):
+#             logger.info("External %s folder not found. Creating folder: %s", external_name, external_path)
+#             os.makedirs(external_path, exist_ok=True)
+#         else:
+#             logger.info("Using external %s folder: %s", external_name, external_path)
+#         return external_path
+#     else:
+#         if os.path.isdir(external_path):
+#             logger.info("Using external %s folder: %s", external_name, external_path)
+#             return external_path
+#         else:
+#             fallback = os.path.join(project_root, fallback_relative)
+#             logger.info("External %s folder not found. Using internal folder: %s", external_name, fallback)
+#             return fallback
 
 
 def main():
@@ -59,29 +50,30 @@ def main():
     project_root = get_project_root()
 
     # Load config.json
-    config_path = os.path.join(os.path.dirname(__file__), "config.json")
-    config = load_config(config_path)
+    # config_path = os.path.join(os.path.dirname(__file__), "config.json")
+    config_path = (SCRIPT_PATH / "config.json").resolve()
+    config = load_json(config_path)
 
     # Determine which analysis module to run from config.
     analysis_module = config.get("analysis_module", "gait")
     logger.info("Selected analysis module: %s", analysis_module)
 
-    # Resolve the data and output directories:
-    data_dir = get_external_folder("Data", project_root, config["data_dir"])
-    output_dir = get_external_folder("Output", project_root, config["output_dir"])
+    # # Resolve the data and output directories:
+    # data_dir = get_external_folder("Data", project_root, config["data_dir"])
+    # output_dir = get_external_folder("Output", project_root, config["output_dir"])
 
-    # Update paths for output subdirectories from config using the resolved output_dir
-    config["gait_parameters"]["save_path"] = os.path.join(output_dir, config["gait_parameters"]["save_path"])
-    config["pose_estimator"]["tracked_csv_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_csv_dir"])
-    config["pose_estimator"]["tracked_video_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_video_dir"])
-    config["event_detection"]["plots_dir"] = os.path.join(output_dir, config["event_detection"]["plots_dir"])
+    # # Update paths for output subdirectories from config using the resolved output_dir
+    # config["gait_parameters"]["save_path"] = os.path.join(output_dir, config["gait_parameters"]["save_path"])
+    # config["pose_estimator"]["tracked_csv_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_csv_dir"])
+    # config["pose_estimator"]["tracked_video_dir"] = os.path.join(output_dir, config["pose_estimator"]["tracked_video_dir"])
+    # config["event_detection"]["plots_dir"] = os.path.join(output_dir, config["event_detection"]["plots_dir"])
 
-    # Ensure that the needed directories exist
-    os.makedirs(data_dir, exist_ok=True)
-    os.makedirs(config["gait_parameters"]["save_path"], exist_ok=True)
-    os.makedirs(config["pose_estimator"]["tracked_csv_dir"], exist_ok=True)
-    os.makedirs(config["pose_estimator"]["tracked_video_dir"], exist_ok=True)
-    os.makedirs(config["event_detection"]["plots_dir"], exist_ok=True)
+    # # Ensure that the needed directories exist
+    # os.makedirs(data_dir, exist_ok=True)
+    # os.makedirs(config["gait_parameters"]["save_path"], exist_ok=True)
+    # os.makedirs(config["pose_estimator"]["tracked_csv_dir"], exist_ok=True)
+    # os.makedirs(config["pose_estimator"]["tracked_video_dir"], exist_ok=True)
+    # os.makedirs(config["event_detection"]["plots_dir"], exist_ok=True)
 
     # Gather input files from data_dir (CSV, MP4, MOV, etc.)
     # EXCLUDE any file name containing "_cropped" so they won't be processed again

@@ -1,13 +1,16 @@
 import pandas as pd
 import logging
 
+from my_utils.helpers import get_file_root
+
 from modules.pose_estimation import PoseEstimator
 from modules.preprocessing import Preprocessor
 from modules.gait_event_detection import EventDetector
 from modules.gait_parameters_computation import GaitParameters
 
-
 from my_utils.helpers import load_csv, get_frame_rate
+
+SCRIPT_PATH = get_file_root(__file__)
 
 class GaitPipeline:
     def __init__(self, input_path, config, save_parameters_path):
@@ -37,12 +40,14 @@ class GaitPipeline:
             # Load a CSV directly.
             self.pose_data = load_csv(file_path=self.input_path)
             self.frame_rate = get_frame_rate(file_path=self.input_path) 
+
         elif self.input_path.endswith((".mp4", ".MP4", ".mov", ".MOV")):
-            # Pass self.config so PoseEstimator uses the same folder settings.
-            pose_estimator = PoseEstimator(config=self.config)
+            pose_estimator = PoseEstimator(**self.config['pose_estimator'])
             self.pose_data, self.frame_rate = pose_estimator.process_video(video_path=self.input_path)
+
             if self.pose_data is not None:
                 self.pose_data = self.pose_data.apply(pd.to_numeric, errors='coerce')
+
         else:
             raise ValueError("Unsupported input format. Use .mp4/.mov for videos or .csv for spreadsheets.")
         return self.pose_data
@@ -53,7 +58,9 @@ class GaitPipeline:
         return self.pose_data
 
     def detect_events(self):
-        detector = EventDetector(**self.config['event_detection'], input_path=self.input_path, frame_rate=self.frame_rate)
+        detector = EventDetector(**self.config['event_detection'], 
+                                 input_path=self.input_path, 
+                                 frame_rate=self.frame_rate)
         self.events = detector.detect_heel_toe_events(self.pose_data)
         return self.events
 

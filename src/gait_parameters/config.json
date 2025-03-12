@@ -17,8 +17,7 @@
     "plots_dir": null
   },
   "preprocessing": {
-    "median_filter_window": 31,
-    "normalization": true
+    "median_filter_window": 31
   },
   "parameters_computer":{
     "parameters_dir": null

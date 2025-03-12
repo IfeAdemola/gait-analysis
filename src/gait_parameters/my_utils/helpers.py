@@ -6,8 +6,9 @@ import shutil
 import skvideo
 import subprocess  # New import for robust FPS extraction
 
-from scipy.signal import find_peaks
-from scipy.signal import butter, lfilter, filtfilt
+from typing import Optional, Any, Tuple
+from pathlib import Path
+from scipy.signal import find_peaks, butter, lfilter, filtfilt
 
 # --- Set FFmpeg Path ---
 def set_ffmpeg_path():
@@ -15,11 +16,60 @@ def set_ffmpeg_path():
         # Check if ffmpeg is available in the system PATH
         ffmpeg_path = shutil.which("ffmpeg")
         if ffmpeg_path:
-            print(f"FFmpeg is available. Path: {ffmpeg_path}")
+            # print(f"FFmpeg is available. Path: {ffmpeg_path}")
             skvideo.setFFmpegPath(os.path.dirname(ffmpeg_path))
     except FileNotFoundError:
         print("FFmpeg is not found on the system.")
     return
+
+
+# --- Resolve Path ---
+def get_file_root(script_file:str) -> Path:
+    path = Path(script_file).resolve()
+    for parent in path.parents:
+        if (parent / "main.py").exists() or (parent / "config.json").exists():
+            return parent
+
+def get_repo_root(SCRIPT_PATH) -> Path:
+    """Returns the absolute path to the repository's root directory."""
+    return SCRIPT_PATH.parents[1]  # Go up one level to 'gait-analysis'
+
+def get_project_root(SCRIPT_PATH) -> Path:
+    """Returns the absolute path to the project's root directory."""
+    return SCRIPT_PATH.parents[2]  # Go up two levels to the dir above the repo dir
+
+def get_model_path(model_name: str) -> Path:
+    """Returns the path for a given model inside the 'models' directory."""
+    project_root = get_project_root()
+    return project_root / "models" / model_name
+
+def resolve_path(relative_path):
+    """
+    Returns the absolute path to a file relative to the script's location.
+
+    Args:
+        relative_path (str): The relative path to the target file.
+
+    Returns:
+        Path: The absolute path to the file.
+    """
+    base_path = Path(__file__).resolve().parent
+    return (base_path / relative_path).resolve()
+
+def get_output_dir(path: Optional[str], default_path: Path) -> Path:
+        """
+        Ensures that the given directory exists. If None, uses the default path.
+
+        Args:
+            path (Optional[str]): User-specified directory path.
+            default_path (Path): Default directory path.
+
+        Returns:
+            Path: The resolved directory path.
+        """
+        resolved_path = Path(path) if path else default_path
+        resolved_path.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
+        return resolved_path
 
 # --- Get Video Frame Rate from Metadata (for CSV inputs) ---  
 def get_metadata_path(file_path):
@@ -161,6 +211,20 @@ def load_csv(file_path, header=[0,1]):
     except Exception as e:
         print(f"Error loading CSV file: {e}")
         return None
+
+def load_json(json_path):
+    """
+    Load a .JSON file.
+
+    Args:
+        config_path (str): Path to the file (JSON).
+
+    Returns:
+        dict: Parsed configuration.
+    """
+    with open(json_path, 'r') as file:
+        json_file = json.load(file)
+    return json_file
 
 def save_csv(data, file_path):
     """

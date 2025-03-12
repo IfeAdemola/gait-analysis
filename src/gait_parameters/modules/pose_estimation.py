@@ -1,56 +1,39 @@
 import numpy as np
 import skvideo.io
 import mediapipe as mp
-from typing import Optional, Any, Tuple
-
 import os
 import glob
 import json
 import logging
+
+import config 
+
+from pathlib import Path
 from tqdm import tqdm
+from typing import Optional, Any, Tuple, Path
 
 from mediapipe.framework.formats import landmark_pb2
 from mediapipe import solutions
 
 from my_utils.mediapipe_landmarks import prepare_empty_dataframe
-from my_utils.helpers import set_ffmpeg_path, get_robust_fps  # Updated import for robust FPS extraction
-
-
-def load_config(config_path):
-    with open(config_path, 'r') as file:
-        config = json.load(file)
-    return config
-
-
-def get_project_root():
-    """
-    Returns the absolute path two levels above this file.
-    """
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+from my_utils.helpers import set_ffmpeg_path, get_output_dir, get_robust_fps  # Updated import for robust FPS extraction
 
 
 class PoseEstimator:
-    def __init__(self, make_video: bool = True, make_csv: bool = True, plot: bool = False, config: Optional[dict] = None):
-        """
-        Initialize the PoseEstimator.
-        """
+    def __init__(self, make_video: bool = True, make_csv: bool = True, plot: bool = False, tracked_csv_dir: Optional[str] = None, tracked_video_dir: Optional[str] = None):
+        
         self.make_video = make_video
         self.make_csv = make_csv
         self.plot = plot
-        self.config = config or {}
         
-        # Use absolute paths from config if provided; otherwise, default relative to project root.
-        project_root = get_project_root()
-        self.tracked_csv_dir = os.path.abspath(self.config.get("pose_estimator", {}).get("tracked_csv_dir", os.path.join(project_root, "output", "tracked_csv")))
-        self.tracked_video_dir = os.path.abspath(self.config.get("pose_estimator", {}).get("tracked_video_dir", os.path.join(project_root, "output", "tracked_videos")))
-        
-        self.hand_model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../models/hand_landmarker.task"))
-        self.pose_model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../models/pose_landmarker_heavy.task"))
-        self.logger = self._setup_logger()
+        # Set default paths if none are provided
+        self.tracked_csv_dir = get_output_dir(tracked_csv_dir, config.PROJECT_ROOT / "output" / "tracked_csv")
+        self.tracked_video_dir = get_output_dir(tracked_video_dir, config.PROJECT_ROOT / "output" / "tracked_videos")
 
-        # Ensure output directories exist
-        os.makedirs(self.tracked_csv_dir, exist_ok=True)
-        os.makedirs(self.tracked_video_dir, exist_ok=True)
+        self.hand_model_path = config.MAIN_ROOT / "models" / "hand_landmarker.task"
+        self.pose_model_path = config.MAIN_ROOT / "models" / "pose_landmarker_heavy.task"
+
+        self.logger = self._setup_logger()
 
         self.initialize_mediapipe_models()
 
@@ -147,16 +130,21 @@ class PoseEstimator:
         )
         return mp.tasks.vision.HandLandmarker.create_from_options(options)
     
-    def process_video(self, video_path: str, tracked_csv_dir: Optional[str] = None, tracked_video_dir: Optional[str] = None) -> Optional[Any]:
+    def process_video(self, video_path: str) -> Optional[Any]:
+        """
+        Processes the given video and stores results in the appropriate directories.
+
+        Args:
+            video_path (str): Path to the input video file.
+
+        Returns:
+            Optional[Any]: Processed video output (implementation-specific).
+        """
         set_ffmpeg_path()
 
-        if tracked_csv_dir is None:
-            tracked_csv_dir = self.tracked_csv_dir
-        if tracked_video_dir is None:
-            tracked_video_dir = self.tracked_video_dir
+        tracked_csv_path, tracked_video_path = self.prepare_file_paths(video_path)
         
-        tracked_csv_path, tracked_video_path = self.prepare_file_paths(video_path, tracked_csv_dir, tracked_video_dir)
-        
+        # TODO: I don't see the necessity of this
         # If tracked CSV already exists, load it and return the data.
         if self.make_csv and os.path.isfile(tracked_csv_path):
             self.logger.info(f"CSV already exists for {video_path}. Loading tracked data.")
@@ -166,12 +154,7 @@ class PoseEstimator:
             except Exception as e:
                 self.logger.error(f"Error loading CSV with multi-index: {e}. Loading without multi-index.")
                 marker_df = pd.read_csv(tracked_csv_path)
-            metadata_path = tracked_csv_path.replace(".csv", "_metadata.json")
-            fs = 25  # default frame rate
-            if os.path.isfile(metadata_path):
-                with open(metadata_path, "r") as f:
-                    metadata = json.load(f)
-                fs = int(metadata.get("fps", 25))
+            fs = self.get_fps_from_metadata(tracked_csv_path)
             return marker_df, fs
 
         if self.make_video and os.path.isfile(tracked_video_path):
@@ -193,6 +176,7 @@ class PoseEstimator:
 
         marker_df, marker_mapping = prepare_empty_dataframe(hands='both', pose=True)
         # Log the marker mapping and verify that the expected keys are present.
+        # TODO: Remove after all updating
         self.logger.debug("Initial empty pose DataFrame columns: {}".format(marker_df.columns))
         self.logger.debug("Marker mapping: {}".format(marker_mapping))
         if "left_foot_index" not in marker_mapping:
@@ -238,8 +222,9 @@ class PoseEstimator:
         if self.make_csv:
             marker_df.to_csv(tracked_csv_path, index=False)
             self.logger.info(f"Saved pose estimation CSV to {tracked_csv_path}")
+            metadata_path = tracked_csv_path.with_name(tracked_csv_path.stem + "_metadata.json")
             metadata_json = {"fps": fs}
-            with open(tracked_csv_path.replace(".csv", "_metadata.json"), "w") as f:
+            with metadata_path.open("w") as f:  # Open the JSON file for writing
                 json.dump(metadata_json, f)
 
         if self.make_video:
@@ -249,23 +234,38 @@ class PoseEstimator:
         return marker_df, fs
     
     def batch_video_processing(self, input_directory) -> Any:
-        video_files = glob.glob(os.path.join(input_directory, "**", "*.mp4"), recursive=True)
-        video_files += glob.glob(os.path.join(input_directory, "**", "*.mov"), recursive=True)
-        video_files += glob.glob(os.path.join(input_directory, "**", "*.MP4"), recursive=True)
-        
-        if not video_files:
-            self.logger.warning(f"No video files found in {input_directory}.")
-            return
-
-        self.logger.info(f"Found {len(video_files)} video files in {input_directory} to process.")
-        
-        for video_file in video_files:
-            self.process_video(video_file, self.tracked_csv_dir, self.tracked_video_dir)
+        pass
     
-    def prepare_file_paths(self, video_path: str, csv_dir: Optional[str], video_dir: Optional[str]) -> Tuple[str, str]:
-        file_name = os.path.splitext(os.path.basename(video_path))[0]
-        os.makedirs(csv_dir, exist_ok=True)
-        tracked_csv_path = os.path.join(csv_dir, f"{file_name}_MPtracked.csv")
-        os.makedirs(video_dir, exist_ok=True)
-        tracked_video_path = os.path.join(video_dir, f"{file_name}_MPtracked.mp4")
+    def get_fps_from_metadata(self, tracked_csv_path: str, default_fps: int = 25) -> int:
+        """
+        Extracts FPS from metadata JSON file. If the file is missing or invalid, returns a default FPS.
+        """
+        metadata_path = Path(tracked_csv_path).with_name(Path(tracked_csv_path).stem + "_metadata.json")  # ✅ Fix applied
+
+        if metadata_path.is_file():
+            try:
+                with metadata_path.open("r") as f:
+                    metadata = json.load(f)
+                return int(metadata.get("fps", default_fps))  # Ensure FPS is an integer
+            except (json.JSONDecodeError, ValueError):
+                self.logger.warning(f"Warning: Metadata file {metadata_path} is corrupted. Using default FPS: {default_fps}")
+
+        return default_fps  # If file does not exist or is invalid, return default FPS
+
+    def prepare_file_paths(self, video_path: str) -> Tuple[Path, Path]:
+        """
+        Prepares file paths for tracked CSV and tracked video, ensuring directories exist.
+
+        Args:
+            video_path (str): Path to the input video file.
+
+        Returns:
+            Tuple[Path, Path]: Paths for the tracked CSV file and tracked video file.
+        """
+        file_name = Path(video_path).stem  # Extract filename without extension
+
+        tracked_csv_path = self.tracked_csv_dir / f"{file_name}_MPtracked.csv"
+        tracked_video_path = self.tracked_video_dir / f"{file_name}_MPtracked.mp4"
+
         return tracked_csv_path, tracked_video_path
+    

@@ -1,34 +1,18 @@
 import numpy as np
 import pandas as pd
 import logging
-from sklearn.decomposition import PCA
 import os
-import json
 
-from my_utils.helpers import detect_extremas
+import config
+
+from sklearn.decomposition import PCA
+from typing import Optional, Any, Tuple
+from pathlib import Path
+
+from my_utils.helpers import detect_extremas, get_output_dir
 # Update the plotting import to the new combined function
 from my_utils.plotting import plot_combined_extremas_and_toe, plot_extrema_frames
 
-def get_project_root():
-    """
-    Returns the absolute path two levels above this file.
-    """
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-
-def load_config(config_path):
-    with open(config_path, "r") as f:
-        return json.load(f)
-
-def get_plots_dir():
-    """
-    Always returns the plots directory inside the external Output folder.
-    The external Output folder is defined as one level above the project root.
-    """
-    project_root = get_project_root()
-    external_output = os.path.join(os.path.abspath(os.path.join(project_root, "..")), "Output")
-    plots_dir = os.path.join(external_output, "plots")
-    os.makedirs(plots_dir, exist_ok=True)
-    return plots_dir
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -45,18 +29,16 @@ class EventDetector:
     Detects heel strike (HS) and toe-off (TO) events from pose data.
     """
     
-    def __init__(self, input_path, algorithm="zeni", make_plot=True, frame_rate=25, window_size=100, step_size=50, config=None, **kwargs):
+    def __init__(self, input_path: Path, algorithm="zeni", make_plot=True, plots_dir: Optional[str] = None, frame_rate=25, window_size=100, step_size=50):
         self.input_path = input_path 
-        # Hardcode the plots directory to always be the external Output/plots folder.
-        self.plots_dir = get_plots_dir()
-        os.makedirs(self.plots_dir, exist_ok=True)
         self.algorithm = algorithm
         self.make_plot = make_plot
         self.frame_rate = frame_rate
         self.window_size = window_size
         self.step_size = step_size
-        self.config = config or {}
-        
+
+        self.plots_dir = get_output_dir(plots_dir, config.PROJECT_ROOT / "output" / "plots")
+
         # Log the frame rate being used.
         logger.info(f"EventDetector initialized with frame_rate: {self.frame_rate} fps")
     
@@ -95,17 +77,13 @@ class EventDetector:
             raise
         return events
 
+    # TODO: Hate the multiple try-except calls
     def _detect_events_zeni(self, pose_data):
         all_forward_movement = {}
         all_extrema_data = {}
         event_extrema_data = {}
         
-        foot_landmarks = {
-            "HS_left": "left_heel",
-            "HS_right": "right_heel",
-            "TO_left": "left_foot_index",
-            "TO_right": "right_foot_index"
-        }
+        foot_landmarks = get_foot_landmarks()
     
         for landmark_name, landmark in foot_landmarks.items():
             try:
@@ -167,6 +145,15 @@ class EventDetector:
         logger.error("Hreljac event detection not implemented yet.")
         raise NotImplementedError("Hreljac event detection not implemented yet.")
 
+
+def get_foot_landmarks():
+    foot_landmarks = {
+        "HS_left": "left_heel",
+        "HS_right": "right_heel",
+        "TO_left": "left_foot_index",
+        "TO_right": "right_foot_index"
+    }
+    return foot_landmarks
 
 def compute_framewise_rotation_angles(pose_data, marker="sacrum", window_size=100, step_size=50):
     sliding_angles = determine_gait_direction_sliding_window(pose_data, marker, window_size, step_size)
